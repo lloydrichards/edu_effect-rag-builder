@@ -3,18 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Shared schemas and contracts for edu_effect-rag-builder.",
-  "keywords": [
-    "rag",
-    "schemas",
-    "rpc",
-    "effect",
-    "typescript"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
-  },
   "exports": {
     ".": "./src/Api.ts",
     "./Api": "./src/Api.ts",

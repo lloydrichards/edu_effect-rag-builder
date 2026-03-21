@@ -3,17 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "OpenTelemetry wiring for edu_effect-rag-builder.",
-  "keywords": [
-    "observability",
-    "opentelemetry",
-    "tracing",
-    "effect"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
-  },
   "exports": {
     ".": "./src/index.ts"
   },
