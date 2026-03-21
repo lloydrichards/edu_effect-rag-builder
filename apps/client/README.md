@@ -1,7 +1,7 @@
 # Client App
 
-React frontend built with Vite and TypeScript, part of the
-[bEvr stack](../../README.md).
+Demo UI for the edu_effect-rag-builder experiment. Built with Vite + React and
+designed to showcase RAG and chat/agent flows.
 
 ## Stack
 
@@ -31,6 +31,7 @@ The client is a standard React application with:
 
 - **Shared Types**: Import from `@repo/domain` for type-safe API communication
 - **Effect Integration**: Use Effect for functional programming patterns
+- **Experiment-first UI**: Components are optimized for fast iteration on RAG UX
 - **Environment Variables**: Configure server URL via `VITE_SERVER_URL`
 
 ## Example Usage
@@ -79,4 +80,4 @@ Tests are colocated with source files using the `*.test.tsx` pattern.
 
 - [React Documentation](https://react.dev)
 - [Vite Documentation](https://vitejs.dev)
-- [bEvr Stack Overview](../../README.md)
+- [Project Overview](../../README.md)

@@ -3,6 +3,19 @@
   "version": "0.0.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "description": "Effect Platform API for the edu_effect-rag-builder experiment.",
+  "keywords": [
+    "rag",
+    "ai",
+    "effect",
+    "bun",
+    "rpc",
+    "server"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
+  },
   "scripts": {
     "build": "bun build src/index.ts --outdir=dist --target=bun --minify",
     "build:types": "tsc --emitDeclarationOnly",

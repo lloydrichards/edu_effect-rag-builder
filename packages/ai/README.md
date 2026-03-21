@@ -1,12 +1,11 @@
 # @repo/ai
 
-Shared AI tooling for the [bEvr stack](../../README.md), built with Effect and
-@effect/ai.
+Shared AI tooling for edu_effect-rag-builder, built with Effect and @effect/ai.
 
 ## Overview
 
 This package provides reusable language model layers, a chat service that
-streams events, and sample toolkits for agentic workflows.
+streams events, and toolkits for agentic workflows.
 
 ## Environment
 
@@ -51,4 +50,4 @@ const AppLive = ChatService.Default.pipe(Layer.provideMerge(AiLive));
 ## Learn More
 
 - [@effect/ai Documentation](https://github.com/tim-smart/effect-io-ai)
-- [bEvr Stack Overview](../../README.md)
+- [Project Overview](../../README.md)

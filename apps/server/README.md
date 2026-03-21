@@ -1,7 +1,8 @@
 # Server API
 
-[Effect Platform](https://effect.website/docs/platform) backend API with
-TypeScript, part of the [bEvr stack](../../README.md).
+[Effect Platform](https://effect.website/docs/platform) backend API for the
+edu_effect-rag-builder experiment. This is where ingestion, retrieval, and
+chat/agent workflows live.
 
 ## Stack
 
@@ -30,7 +31,8 @@ The server uses Effect Platform HTTP API for type-safe, functional HTTP
 handling:
 
 - **Type-safe Routes**: Shared types from `@repo/domain`
-- **CORS Support**: Pre-configured for client communication
+- **RAG pipeline services**: Ingestion and retrieval wiring lives here
+- **Chat + agents**: Streaming RPC handlers for agent workflows
 - **Effect Integration**: Functional error handling and data processing
 - **Environment Agnostic**: Deploy to any JavaScript runtime
 
@@ -94,4 +96,4 @@ automatically handles Effect execution and error propagation.
 ## Learn More
 
 - [Effect Documentation](https://effect.website)
-- [bEvr Stack Overview](../../README.md)
+- [Project Overview](../../README.md)

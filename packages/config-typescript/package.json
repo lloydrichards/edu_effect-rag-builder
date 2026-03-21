@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "description": "Shared TypeScript configuration for edu_effect-rag-builder.",
+  "keywords": [
+    "typescript",
+    "config",
+    "monorepo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
+  },
   "publishConfig": {
     "access": "public"
   }
