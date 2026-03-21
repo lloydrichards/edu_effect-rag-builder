@@ -10,6 +10,6 @@
       }
     ]
   },
-  "include": ["src/**/*", "../../packages/ai/src/LanguageModel.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,3 +1,4 @@
+import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
 import type {
   ChromaClient as ChromaSdkClient,
   Metadata,
@@ -57,11 +58,17 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
     const getCollection = (name: string, ensureCollection: boolean) =>
       chroma.use((sdk) =>
         ensureCollection
-          ? sdk.getOrCreateCollection({ name })
+          ? sdk.getOrCreateCollection({
+              name,
+              embeddingFunction: new DefaultEmbeddingFunction(),
+            })
           : sdk.getCollection({ name }),
       );
 
     const ingest = Effect.fn("ingest")(function* (input: RagIngestInput) {
+      yield* Effect.log(
+        `[RagService] Ingest request received for collection "${input.collection}" with ${input.ids.length} items`,
+      ); // Log the ingest request details
       const collection = yield* getCollection(
         input.collection,
         input.ensureCollection ?? true,

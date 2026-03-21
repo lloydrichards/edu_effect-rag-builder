@@ -1,8 +1,14 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import { ChatServiceLive, FastModelLive, SampleToolkitLive } from "@repo/ai";
+import {
+  ChatServiceLive,
+  EmbeddingModelLive,
+  FastModelLive,
+  SampleToolkitLive,
+} from "@repo/ai";
 import { Api } from "@repo/domain/Api";
 import { EventRpc } from "@repo/domain/Rpc";
 import { ObservabilityLive } from "@repo/observability";
+import { RagService } from "@repo/rag";
 import { Config, Effect, Layer } from "effect";
 import { DevTools } from "effect/unstable/devtools";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
@@ -11,6 +17,7 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import { HealthGroupLive } from "./Api/Health";
 import { HelloGroupLive } from "./Api/Hello";
 import { EventRpcLive } from "./Rpc/Event";
+import { UploadIngestService } from "./services/UploadIngestService";
 
 // ============================================================================
 // Server Configuration
@@ -43,6 +50,9 @@ const HttpRpcRouter = RpcServer.layerHttp({
   spanPrefix: "rpc",
 }).pipe(
   Layer.provide(EventRpcLive),
+  Layer.provide(UploadIngestService.Default),
+  Layer.provide(RagService.Default),
+  Layer.provide(EmbeddingModelLive),
   Layer.provide(ChatServiceLive),
   Layer.provide(SampleToolkitLive),
   Layer.provide(FastModelLive),
