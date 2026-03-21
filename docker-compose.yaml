@@ -10,10 +10,14 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: bevr-server
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
     expose:
       - "9000"
     networks:
       - app-network
+    depends_on:
+      - chroma
 
   server-mcp:
     build:
@@ -42,6 +46,15 @@ services:
       - server
       - server-mcp
 
+  chroma:
+    image: chromadb/chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+    networks:
+      - app-network
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.116.1
     command: ["--config=/etc/otel-collector-config.yaml"]
@@ -65,3 +78,6 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  chroma_data:

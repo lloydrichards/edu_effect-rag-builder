@@ -8,6 +8,7 @@ import {
 } from "@repo/domain/Upload";
 import { Effect, Stream } from "effect";
 import { runtime } from "../atom";
+import { RpcClient } from "../rpc-client";
 
 const generateId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -37,9 +38,18 @@ const readChunkAsBase64 = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
-// TODO: Replace with actual server call when endpoint is ready
-const sendChunk = (_chunk: UploadChunk): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 15));
+type UploadAck = {
+  readonly ok: true;
+  readonly status: "chunk-received" | "ingest-complete" | "ingest-failed";
+};
+
+const sendChunk = (
+  chunk: UploadChunk,
+): Effect.Effect<UploadAck, unknown, RpcClient> =>
+  Effect.gen(function* () {
+    const rpc = yield* RpcClient;
+    return yield* rpc.client.uploadChunk(chunk);
+  });
 
 export type UploadState = {
   readonly files: readonly FileUploadEntry[];
@@ -57,6 +67,11 @@ type UploadEvent =
       readonly id: string;
       readonly chunksUploaded: number;
       readonly progress: number;
+    }
+  | {
+      readonly _tag: "ingest";
+      readonly id: string;
+      readonly status: "complete" | "error";
     };
 
 export const uploadAtom = runtime.fn((files: readonly File[]) => {
@@ -122,6 +137,22 @@ export const uploadAtom = runtime.fn((files: readonly File[]) => {
                   : f,
               ),
             };
+          case "ingest":
+            return {
+              files: state.files.map((f) =>
+                f.id === event.id
+                  ? {
+                      ...f,
+                      status:
+                        event.status === "complete" ? "complete" : "error",
+                      error:
+                        event.status === "error"
+                          ? "Ingest failed. Check server logs."
+                          : f.error,
+                    }
+                  : f,
+              ),
+            };
         }
       },
     ),
@@ -131,14 +162,14 @@ export const uploadAtom = runtime.fn((files: readonly File[]) => {
 const uploadFile = (
   entry: FileUploadEntry,
   file: File,
-): Stream.Stream<UploadEvent> =>
+): Stream.Stream<UploadEvent, never, RpcClient> =>
   Stream.concat(
     Stream.fromIterable<UploadEvent>([
       { _tag: "status", id: entry.id, status: "reading" },
     ]),
     Stream.fromEffect(
-      Effect.promise(async (): Promise<UploadEvent[]> => {
-        try {
+      Effect.result(
+        Effect.gen(function* () {
           const events: UploadEvent[] = [
             { _tag: "status", id: entry.id, status: "uploading" },
           ];
@@ -149,15 +180,21 @@ const uploadFile = (
             const start = i * CHUNK_SIZE;
             const end = Math.min(start + CHUNK_SIZE, file.size);
             const blob = file.slice(start, end);
-            const data = await readChunkAsBase64(blob);
+            const data = yield* Effect.promise(() => readChunkAsBase64(blob));
 
-            await sendChunk({
+            const ack = yield* sendChunk({
               fileId: entry.id,
               fileName: file.name,
               chunkIndex: i,
               totalChunks,
               data,
             });
+
+            if (ack.status === "ingest-complete") {
+              events.push({ _tag: "ingest", id: entry.id, status: "complete" });
+            } else if (ack.status === "ingest-failed") {
+              events.push({ _tag: "ingest", id: entry.id, status: "error" });
+            }
 
             events.push({
               _tag: "progress",
@@ -167,20 +204,26 @@ const uploadFile = (
             });
           }
 
-          events.push({ _tag: "status", id: entry.id, status: "complete" });
           return events;
-        } catch (err) {
-          return [
-            {
-              _tag: "status" as const,
-              id: entry.id,
-              status: "error" as const,
-              error: err instanceof Error ? err.message : String(err),
-            },
-          ];
-        }
-      }),
-    ).pipe(Stream.flatMap((events) => Stream.fromIterable(events))),
+        }),
+      ),
+    ).pipe(
+      Stream.flatMap((result) =>
+        result._tag === "Success"
+          ? Stream.fromIterable(result.success)
+          : Stream.fromIterable<UploadEvent>([
+              {
+                _tag: "status",
+                id: entry.id,
+                status: "error",
+                error:
+                  result.failure instanceof Error
+                    ? result.failure.message
+                    : String(result.failure),
+              },
+            ]),
+      ),
+    ),
   );
 
 export const validateFiles = (
