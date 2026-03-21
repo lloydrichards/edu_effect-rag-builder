@@ -8,7 +8,8 @@
     "./Api": "./src/Api.ts",
     "./Chat": "./src/Chat.ts",
     "./Rpc": "./src/Rpc.ts",
-    "./WebSocket": "./src/WebSocket.ts"
+    "./WebSocket": "./src/WebSocket.ts",
+    "./Upload": "./src/Upload.ts"
   },
   "main": "./src/Api.ts",
   "types": "./src/Api.ts",
