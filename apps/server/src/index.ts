@@ -2,9 +2,7 @@ import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
 import { ChatServiceLive, FastModelLive, SampleToolkitLive } from "@repo/ai";
 import { Api } from "@repo/domain/Api";
 import { EventRpc } from "@repo/domain/Rpc";
-import { WebSocketRpc } from "@repo/domain/WebSocket";
 import { ObservabilityLive } from "@repo/observability";
-import { PresenceServiceLive } from "@repo/presence";
 import { Config, Effect, Layer } from "effect";
 import { DevTools } from "effect/unstable/devtools";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
@@ -13,7 +11,6 @@ import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import { HealthGroupLive } from "./Api/Health";
 import { HelloGroupLive } from "./Api/Hello";
 import { EventRpcLive } from "./Rpc/Event";
-import { PresenceRpcLive } from "./Rpc/Presence";
 
 // ============================================================================
 // Server Configuration
@@ -52,19 +49,6 @@ const HttpRpcRouter = RpcServer.layerHttp({
   Layer.provide(RpcSerialization.layerNdjson),
 );
 
-// WebSocket RPC Router (for PresenceRpc - real-time presence)
-const WebSocketRpcRouter = RpcServer.layerHttp({
-  group: WebSocketRpc,
-  path: "/ws",
-  protocol: "websocket", // Use WebSocket for PresenceRpc!
-  spanPrefix: "ws",
-  disableFatalDefects: true,
-}).pipe(
-  Layer.provide(PresenceRpcLive),
-  Layer.provide(PresenceServiceLive),
-  Layer.provide(RpcSerialization.layerNdjson),
-);
-
 // ============================================================================
 // Server Launch
 // ============================================================================
@@ -88,11 +72,7 @@ const HttpLive = Effect.gen(function* () {
   yield* Effect.log("  - HTTP RPC at /rpc (EventRpc)");
   yield* Effect.log("  - WebSocket RPC at /ws (PresenceRpc)");
 
-  const AllRouters = Layer.mergeAll(
-    ApiRouter,
-    HttpRpcRouter,
-    WebSocketRpcRouter,
-  ).pipe(
+  const AllRouters = Layer.mergeAll(ApiRouter, HttpRpcRouter).pipe(
     Layer.provide(
       HttpRouter.cors({
         allowedOrigins,
