@@ -3,7 +3,6 @@ import effect from "./assets/effect.svg";
 import react from "./assets/react.svg";
 import vite from "./assets/vite.svg";
 import { ChatBox } from "./components/chat-box";
-import { PresencePanel } from "./components/presence-panel";
 import { RestCard } from "./components/rest-card";
 import { RpcCard } from "./components/rpc-card";
 import { ThemeToggle } from "./components/theme-toggle";
@@ -33,7 +32,6 @@ function App() {
 
       <div className="grid w-full grid-cols-1 gap-6 auto-rows-[30rem] lg:auto-rows-[22rem] lg:grid-cols-2">
         <ChatBox />
-        <PresencePanel className="h-full" />
         <RestCard />
         <RpcCard />
       </div>

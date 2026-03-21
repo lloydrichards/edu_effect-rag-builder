@@ -3,6 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "AI tooling and chat services for edu_effect-rag-builder.",
+  "keywords": [
+    "rag",
+    "ai",
+    "effect",
+    "anthropic",
+    "chat",
+    "agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
+  },
   "exports": {
     ".": "./src/index.ts"
   },

@@ -1,5 +1,5 @@
 {
-  "name": "base_bevr-stack",
+  "name": "edu_effect-rag-builder",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -11,6 +11,23 @@
     "test": "turbo run test",
     "test:e2e": "playwright test",
     "type-check": "turbo run type-check"
+  },
+  "description": "Experimental AI/RAG toolkit monorepo built with Bun, Effect, Vite, and React.",
+  "keywords": [
+    "rag",
+    "retrieval-augmented-generation",
+    "ai",
+    "llm",
+    "effect",
+    "bun",
+    "react",
+    "vite",
+    "turborepo",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/edu_effect-rag-builder.git"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.8",

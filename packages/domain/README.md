@@ -1,19 +1,20 @@
 # @repo/domain
 
-Shared types and schemas for the [bEvr stack](../../README.md), built with
-Effect Schema.
+Shared schemas and RPC contracts for the edu_effect-rag-builder experiment,
+built with Effect Schema.
 
 ## Overview
 
 This package provides type-safe schemas and utilities shared between the client
-and server applications. Uses Effect Schema for runtime validation and type
-generation.
+and server applications. It defines the contracts used for ingestion, retrieval,
+and chat/agent flows.
 
 ## Features
 
 - **Effect Schema Integration** - Runtime validation with compile-time types
 - **Shared Types** - Common interfaces used across apps
 - **Type Safety** - End-to-end type safety from client to server
+- **RAG contracts** - Schemas for ingestion, retrieval, and chat flows
 - **Functional Programming** - Built with Effect ecosystem patterns
 
 ## Usage
@@ -44,4 +45,4 @@ src/
 ## Learn More
 
 - [Effect Schema Documentation](https://effect.website/docs/schema)
-- [bEvr Stack Overview](../../README.md)
+- [Project Overview](../../README.md)

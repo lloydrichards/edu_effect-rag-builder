@@ -1,25 +1,28 @@
-# bEvr Stack
+# edu_effect-rag-builder
 
-A modern full-stack TypeScript monorepo with end-to-end type safety, using Bun,
-Effect, Vite, and React. Heavily inspired by the [bhvr](https://bhvr.dev/) stack
-but the addition of Effect and Turborepo. Includes a Model Context Protocol
-(MCP) server for AI assistant integrations.
+An experimental AI/RAG toolkit monorepo for exploring different retrieval
+pipelines, sources, and interaction patterns. Built with Bun, Effect, Vite, and
+React for end-to-end type safety and fast iteration.
 
 ![screenshot of client app](./e2e/smoke.spec.ts-snapshots/app-layout-chromium-darwin.png)
+
+## What It Is
+
+- **RAG-first experiments**: Try different ingestion, chunking, retrieval, and
+  evaluation strategies without rebuilding the stack
+- **Chat + agents**: Streaming chat flows with tool-driven workflows
+- **Shared domain**: Effect Schema types shared across client and server
+- **Modern TypeScript stack**: Bun, Vite, React, Effect, Turborepo
+- **Optional observability**: OpenTelemetry wiring when env vars are set
 
 ## Features
 
 - **End-to-end TypeScript**: Full type safety from client to server
-- **Shared Domain**: Common types and utilities across all apps
-- **Effect Integration**: Built for composable, functional programming with
-  [Effect](https://effect.website)
-- **MCP Server**: [Model Context Protocol](https://modelcontextprotocol.io/)
-  server for AI assistant tools and resources
-- **Modern Tooling**: [Turborepo](https://turbo.build/), [Bun](https://bun.sh/),
-  [Vite](https://vitejs.dev/), and [React](https://react.dev/)
-- **Zero Config**: Pre-configured linting and formatting with
-  [Biome](https://biomejs.dev)
-- **Flexible Deployment**: Deploy anywhere without vendor lock-in
+- **RAG pipeline building blocks**: Schemas and RPC endpoints to iterate on
+  retrieval approaches
+- **Streaming UX**: UI and RPC for chat and agent workflows
+- **Zero config DX**: Biome linting/formatting, Turbo builds, Bun runtime
+- **Flexible deployment**: Docker compose for local experiments
 
 ## Quick Start
 
@@ -76,30 +79,22 @@ bun run test:e2e -- --update-snapshots
 
 ### CI/CD Workflows
 
-| Workflow       | Trigger   | Purpose                       |
-| -------------- | --------- | ----------------------------- |
-| `check-client` | PR + main | Fast: lint, types, unit tests |
-| `check-server` | PR + main | Fast: lint, types, unit tests |
-| `post-merge`   | main only | Slow: E2E, visual regression  |
-
-Visual regression baselines are stored in `e2e/smoke.spec.ts-snapshots/` and
-should be committed to git. Update them when UI changes are intentional.
+This repo currently ships with local dev and test scripts. Add CI workflows when
+you are ready to stabilize experiment paths.
 
 ## Project Structure
 
 ```txt
 .
 ├── apps/
-│   ├── client/             # React frontend (Vite + React)
-│   ├── server/             # Bun + Effect backend API
-│   └── server-mcp/         # Model Context Protocol server
+│   ├── client/             # React demo UI (Vite + React)
+│   └── server/             # Bun + Effect backend API
 ├── e2e/                     # Playwright end-to-end tests
 ├── packages/
 │   ├── ai/                 # AI services and toolkits
 │   ├── config-typescript/  # TypeScript configurations
 │   ├── domain/             # Shared Schema definitions
-│   ├── observability/      # OpenTelemetry setup
-│   └── presence/           # Presence tracking service
+│   └── observability/      # OpenTelemetry setup
 ├── docker-compose.yaml     # Docker Compose configuration for deployment
 ├── package.json            # Root package.json with workspaces
 └── turbo.json              # Turborepo configuration
@@ -107,21 +102,19 @@ should be committed to git. Update them when UI changes are intentional.
 
 ### Apps
 
-| App          | Description                                                                                                     |
-| ------------ | --------------------------------------------------------------------------------------------------------------- |
-| `client`     | A [React](https://react.dev) app built with [Vite](https://vitejs.dev)                                          |
-| `server`     | A [Effect Platform](https://effect.website) backend API                                                         |
-| `server-mcp` | A [Model Context Protocol](https://modelcontextprotocol.io/) server built with [Effect](https://effect.website) |
+| App      | Description                                                            |
+| -------- | ---------------------------------------------------------------------- |
+| `client` | Demo UI for RAG experiments and chat flows                              |
+| `server` | Effect Platform API for ingestion, retrieval, and chat/agent workflows  |
 
 ### Packages
 
-| Package                   | Description                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `@repo/config-typescript` | TypeScript configurations used throughout the monorepo                                                             |
-| `@repo/domain`            | Shared Schema definitions using [Effect Schema](https://effect.website/docs/schema) used by both client and server |
-| `@repo/ai`                | AI tooling and service layers built on [@effect/ai](https://github.com/tim-smart/effect-io-ai)                     |
-| `@repo/observability`     | Shared OpenTelemetry setup                                                                                         |
-| `@repo/presence`          | Presence tracking service for WebSocket clients                                                                    |
+| Package                   | Description                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `@repo/config-typescript` | TypeScript configurations used throughout the monorepo                                                        |
+| `@repo/domain`            | Shared schemas and RPC contracts for ingestion, retrieval, and chat flows                                     |
+| `@repo/ai`                | AI tooling and service layers built on [@effect/ai](https://github.com/tim-smart/effect-io-ai)                |
+| `@repo/observability`     | Shared OpenTelemetry setup                                                                                    |
 
 ## Development
 
@@ -131,14 +124,10 @@ bun dev
 # Run specific app
 bun dev --filter=client
 bun dev --filter=server
-bun dev --filter=server-mcp
 
 
 # Build all apps
 bun run build
-
-# Test MCP server functionality (MCPJam Inspector)
-bun --filter=server-mcp run inspector
 ```
 
 ## Deployment
@@ -155,7 +144,7 @@ background:
 docker-compose up -d --build
 ```
 
-This will start all three services: `client`, `server`, and `server-mcp`.
+This will start the `client` and `server` services.
 
 ### Environment Variables
 
@@ -165,7 +154,7 @@ You can configure the deployment using environment variables:
 # Example .env file
 CLIENT_PORT=3000
 SERVER_PORT=9000
-MCP_PORT=9009
+ANTHROPIC_API_KEY=your_key_here
 ```
 
 ## Type Safety
@@ -175,6 +164,13 @@ Import shared types from the domain package:
 ```typescript
 import { ApiResponse } from "@repo/domain/Api";
 ```
+
+## Notes For Experiments
+
+- The RAG pipeline is intentionally modular. Swap sources, chunking strategies,
+  or embedding models as you iterate.
+- The demo client is expected to evolve quickly. Update snapshots if UI changes
+  are intentional.
 
 ## Learn More
 
