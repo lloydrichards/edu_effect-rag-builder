@@ -51,7 +51,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - chroma_data:/data
+      - data:/data
     networks:
       - app-network
 
@@ -80,4 +80,4 @@ networks:
     driver: bridge
 
 volumes:
-  chroma_data:
+  data:

@@ -37,6 +37,20 @@ bun dev
 bun run build
 ```
 
+### Local ChromaDB (Docker)
+
+For local dev, run the ChromaDB container and point the server at it:
+
+```bash
+# Start the ChromaDB service only
+docker-compose up -d chroma
+
+# In another shell, run the server with ChromaDB env vars
+CHROMA_HOST=localhost CHROMA_PORT=8000 bun dev --filter=server
+```
+
+ChromaDB will be available at `http://localhost:8000`.
+
 ### Formatting and Linting
 
 Format and lint the codebase using Ultracite:
@@ -104,17 +118,17 @@ you are ready to stabilize experiment paths.
 
 | App      | Description                                                            |
 | -------- | ---------------------------------------------------------------------- |
-| `client` | Demo UI for RAG experiments and chat flows                              |
-| `server` | Effect Platform API for ingestion, retrieval, and chat/agent workflows  |
+| `client` | Demo UI for RAG experiments and chat flows                             |
+| `server` | Effect Platform API for ingestion, retrieval, and chat/agent workflows |
 
 ### Packages
 
-| Package                   | Description                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `@repo/config-typescript` | TypeScript configurations used throughout the monorepo                                                        |
-| `@repo/domain`            | Shared schemas and RPC contracts for ingestion, retrieval, and chat flows                                     |
-| `@repo/ai`                | AI tooling and service layers built on [@effect/ai](https://github.com/tim-smart/effect-io-ai)                |
-| `@repo/observability`     | Shared OpenTelemetry setup                                                                                    |
+| Package                   | Description                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| `@repo/config-typescript` | TypeScript configurations used throughout the monorepo                                         |
+| `@repo/domain`            | Shared schemas and RPC contracts for ingestion, retrieval, and chat flows                      |
+| `@repo/ai`                | AI tooling and service layers built on [@effect/ai](https://github.com/tim-smart/effect-io-ai) |
+| `@repo/observability`     | Shared OpenTelemetry setup                                                                     |
 
 ## Development
 
