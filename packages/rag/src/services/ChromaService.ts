@@ -45,7 +45,16 @@ export class ChromaService extends ServiceMap.Service<ChromaService>()(
         Effect.tryPromise({
           try: () => fn(client),
           catch: (cause) => new ChromaError({ cause }),
-        }).pipe(Effect.withSpan(`chroma.${fn.name || "use"}`));
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.logError(
+              `[ChromaService] ${fn.name || "use"} failed: ${String(
+                error.cause,
+              )}`,
+            ),
+          ),
+          Effect.withSpan(`chroma.${fn.name || "use"}`),
+        );
 
       return { client, use } as const;
     }),

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@effect/ai-anthropic": "4.0.0-beta.36",
+    "@effect/ai-openai": "4.0.0-beta.36",
     "@repo/domain": "workspace:*",
     "effect": "4.0.0-beta.36"
   },
