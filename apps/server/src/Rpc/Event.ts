@@ -2,10 +2,12 @@ import { ChatService } from "@repo/ai";
 import { EventRpc, type TickEvent } from "@repo/domain/Rpc";
 import { Effect, Queue } from "effect";
 import { Prompt } from "effect/unstable/ai";
+import { UploadIngestService } from "../services/UploadIngestService";
 
 export const EventRpcLive = EventRpc.toLayer(
   Effect.gen(function* () {
     const bot = yield* ChatService;
+    const uploadIngest = yield* UploadIngestService;
     yield* Effect.log("Starting Event RPC Live Implementation");
     return EventRpc.of({
       tick: Effect.fn(function* (payload) {
@@ -38,6 +40,12 @@ export const EventRpcLive = EventRpc.toLayer(
             });
           }),
         ),
+      uploadChunk: Effect.fn(function* (chunk) {
+        yield* Effect.log(
+          `Upload chunk received: ${chunk.fileName} ${chunk.chunkIndex + 1}/${chunk.totalChunks}`,
+        );
+        return yield* uploadIngest.handleChunk(chunk);
+      }),
     });
   }),
 );
