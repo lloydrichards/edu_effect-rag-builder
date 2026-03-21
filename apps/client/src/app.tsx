@@ -6,6 +6,7 @@ import { ChatBox } from "./components/chat-box";
 import { RestCard } from "./components/rest-card";
 import { RpcCard } from "./components/rpc-card";
 import { ThemeToggle } from "./components/theme-toggle";
+import { UploadCard } from "./components/upload-card";
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
 
       <div className="grid w-full grid-cols-1 gap-6 auto-rows-[30rem] lg:auto-rows-[22rem] lg:grid-cols-2">
         <ChatBox />
+        <UploadCard />
         <RestCard />
         <RpcCard />
       </div>
