@@ -1,5 +1,16 @@
 FROM oven/bun:alpine AS base
-RUN apk update && apk add --no-cache jq libc6-compat
+RUN apk update && apk add --no-cache \
+  cairo \
+  fontconfig \
+  freetype \
+  giflib \
+  harfbuzz \
+  jq \
+  libc6-compat \
+  libjpeg-turbo \
+  libpng \
+  pango \
+  pixman
 WORKDIR /app
 
 # Step 1: Install dependencies only when needed
