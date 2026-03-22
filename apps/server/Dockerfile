@@ -1,16 +1,16 @@
-FROM oven/bun:alpine AS base
-RUN apk update && apk add --no-cache \
-  cairo \
-  fontconfig \
-  freetype \
-  giflib \
-  harfbuzz \
+FROM oven/bun:latest AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
   jq \
-  libc6-compat \
-  libjpeg-turbo \
-  libpng \
-  pango \
-  pixman
+  libcairo2 \
+  libfontconfig1 \
+  libfreetype6 \
+  libgif7 \
+  libharfbuzz0b \
+  libjpeg62-turbo \
+  libpango-1.0-0 \
+  libpixman-1-0 \
+  libpng16-16 \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Step 1: Install dependencies only when needed
