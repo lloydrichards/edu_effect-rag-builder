@@ -4,6 +4,7 @@ import {
   EmbeddingModelLive,
   FastModelLive,
   SampleToolkitLive,
+  SmartModelLive,
 } from "@repo/ai";
 import { Api } from "@repo/domain/Api";
 import { EventRpc } from "@repo/domain/Rpc";
@@ -14,6 +15,7 @@ import { DevTools } from "effect/unstable/devtools";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+import { RagToolkitLive } from "../../../packages/ai/src/toolkits/RagToolkit";
 import { HealthGroupLive } from "./Api/Health";
 import { HelloGroupLive } from "./Api/Hello";
 import { EventRpcLive } from "./Rpc/Event";
@@ -51,11 +53,11 @@ const HttpRpcRouter = RpcServer.layerHttp({
 }).pipe(
   Layer.provide(EventRpcLive),
   Layer.provide(UploadIngestService.Default),
-  Layer.provide(RagService.Default),
-  Layer.provide(EmbeddingModelLive),
   Layer.provide(ChatServiceLive),
   Layer.provide(SampleToolkitLive),
-  Layer.provide(FastModelLive),
+  Layer.provide(RagToolkitLive),
+  Layer.provide(RagService.Default),
+  Layer.provide(SmartModelLive),
   Layer.provide(RpcSerialization.layerNdjson),
 );
 
