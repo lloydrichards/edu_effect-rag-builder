@@ -1,11 +1,5 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import {
-  ChatServiceLive,
-  EmbeddingModelLive,
-  FastModelLive,
-  SampleToolkitLive,
-  SmartModelLive,
-} from "@repo/ai";
+import { ChatServiceLive, SampleToolkitLive, SmartModelLive } from "@repo/ai";
 import { Api } from "@repo/domain/Api";
 import { EventRpc } from "@repo/domain/Rpc";
 import { ObservabilityLive } from "@repo/observability";

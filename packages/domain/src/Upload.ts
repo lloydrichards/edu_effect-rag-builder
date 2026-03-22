@@ -42,6 +42,7 @@ export const FileUploadEntry = Schema.Struct({
   status: FileUploadStatus,
   progress: Schema.Number,
   error: Schema.optional(Schema.String),
+  ingesting: Schema.optional(Schema.Boolean),
   chunksTotal: Schema.Number,
   chunksUploaded: Schema.Number,
 });
@@ -61,3 +62,32 @@ export const UploadChunk = Schema.Struct({
 });
 
 export type UploadChunk = Schema.Schema.Type<typeof UploadChunk>;
+
+// ==========================================================================
+// Upload ingest progress events
+// ==========================================================================
+
+export const UploadIngestEvent = Schema.Union([
+  Schema.TaggedStruct("chunk-received", {
+    id: Schema.String,
+    chunkIndex: Schema.Number,
+  }),
+  Schema.TaggedStruct("ingest-start", {
+    id: Schema.String,
+  }),
+  Schema.TaggedStruct("ingest-progress", {
+    id: Schema.String,
+    processed: Schema.Number,
+    total: Schema.Number,
+  }),
+  Schema.TaggedStruct("ingest-complete", {
+    id: Schema.String,
+    total: Schema.Number,
+  }),
+  Schema.TaggedStruct("ingest-failed", {
+    id: Schema.String,
+    message: Schema.String,
+  }),
+]);
+
+export type UploadIngestEvent = Schema.Schema.Type<typeof UploadIngestEvent>;
