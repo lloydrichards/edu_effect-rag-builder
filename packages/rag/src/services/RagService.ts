@@ -1,8 +1,12 @@
 import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
 import type { Metadata, Where, WhereDocument } from "chromadb";
-import { Effect, Layer, ServiceMap } from "effect";
+import { Data, Effect, Layer, ServiceMap } from "effect";
 import { ChromaService } from "./ChromaService";
 
+export class RagError extends Data.TaggedError("RagError")<{
+  message: string;
+  cause: unknown;
+}> {}
 export type RagHit = Readonly<{
   id: string;
   score: number | null;
@@ -55,14 +59,20 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       );
       const collection = yield* getCollection(input.collection);
 
-      yield* Effect.tryPromise(() =>
-        collection.upsert({
-          ids: input.ids,
-          ...(input.embeddings ? { embeddings: input.embeddings } : {}),
-          ...(input.documents ? { documents: input.documents } : {}),
-          ...(input.metadatas ? { metadatas: input.metadatas } : {}),
-        }),
-      );
+      yield* Effect.tryPromise({
+        try: () =>
+          collection.upsert({
+            ids: input.ids,
+            ...(input.embeddings ? { embeddings: input.embeddings } : {}),
+            ...(input.documents ? { documents: input.documents } : {}),
+            ...(input.metadatas ? { metadatas: input.metadatas } : {}),
+          }),
+        catch: (error) =>
+          new RagError({
+            message: `Error during ingestion into collection "${input.collection}"`,
+            cause: error,
+          }),
+      });
 
       return { count: input.ids.length } as const;
     });
@@ -70,7 +80,8 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
     const retrieve = Effect.fn("retrieve")(function* (
       input: Readonly<{
         collection: string;
-        embedding: Array<number>;
+        queries: Array<string>;
+        embedding?: Array<number>;
         topK: number;
         where?: Where;
         whereDocument?: WhereDocument;
@@ -78,17 +89,24 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
     ) {
       const collection = yield* getCollection(input.collection);
 
-      const result = yield* Effect.tryPromise(() =>
-        collection.query({
-          queryEmbeddings: [input.embedding],
-          nResults: input.topK,
-          ...(input.where ? { where: input.where } : {}),
-          ...(input.whereDocument
-            ? { whereDocument: input.whereDocument }
-            : {}),
-          include: ["documents", "metadatas", "distances"],
-        }),
-      );
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          collection.query({
+            queryTexts: input.queries,
+            nResults: input.topK,
+            ...(input.embedding ? { queryEmbeddings: [input.embedding] } : {}),
+            ...(input.where ? { where: input.where } : {}),
+            ...(input.whereDocument
+              ? { whereDocument: input.whereDocument }
+              : {}),
+            include: ["documents", "metadatas", "distances"],
+          }),
+        catch: (error) =>
+          new RagError({
+            message: `Error during retrieval from collection "${input.collection}"`,
+            cause: error,
+          }),
+      });
 
       return {
         hits: normalizeHits(
@@ -102,7 +120,40 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       } as const;
     });
 
-    return { ingest, retrieve } as const;
+    const listDocuments = Effect.fn("listDocuments")(function* (input: {
+      collection: string;
+      query?: string;
+      limit?: number;
+    }) {
+      const collection = yield* getCollection(input.collection);
+      const limit = input.limit ?? 10;
+
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          collection.get({
+            include: ["documents", "metadatas"],
+            ...(input.query
+              ? { whereDocument: { $contains: input.query } }
+              : {}),
+            ...(Number.isFinite(limit) ? { limit } : {}),
+          }),
+        catch: (error) =>
+          new RagError({
+            message: `Error listing documents in collection "${input.collection}"`,
+            cause: error,
+          }),
+      });
+
+      const documents = (result.documents ?? []).map((doc, index) => ({
+        id: result.ids?.[index] ?? null,
+        document: doc,
+        metadata: result.metadatas?.[index] ?? null,
+      }));
+
+      return { documents } as const;
+    });
+
+    return { ingest, retrieve, listDocuments } as const;
   }),
 }) {
   static Default = Layer.effect(RagService)(RagService.make).pipe(
