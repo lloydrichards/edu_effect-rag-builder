@@ -31,9 +31,10 @@ export class ChatService extends ServiceMap.Service<ChatServiceApi>()(
         yield* Effect.forkScoped(
           Effect.gen(function* () {
             const systemMessage = String.stripMargin(`
-              |You are a helpful general assistant.
-              |You have access to tools and should use them when appropriate.
-              |Be concise and direct in your responses.
+              |You are RAG Bot, an AI assistant for answering questions using retrieved documents.
+              |When given a question, you should use the tools available to you to find relevant information and provide a helpful answer.
+              |Always use the provided tools to retrieve information when needed, and cite your sources in the final answer.
+              |If you don't know the answer, say you don't know. Do not make up answers.
             `);
 
             const session = yield* Chat.fromPrompt(
@@ -46,6 +47,7 @@ export class ChatService extends ServiceMap.Service<ChatServiceApi>()(
               chat: session,
               queue,
               toolkit,
+              maxIterations: 25,
             });
           }).pipe(
             Effect.catchCause((cause) =>

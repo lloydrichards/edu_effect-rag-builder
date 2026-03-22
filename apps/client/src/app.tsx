@@ -31,7 +31,7 @@ function App() {
         <p className="text-muted-foreground">A typesafe fullstack monorepo</p>
       </div>
 
-      <div className="grid w-full grid-cols-1 gap-6 auto-rows-[30rem] lg:auto-rows-[22rem] lg:grid-cols-2">
+      <div className="grid w-full grid-cols-1 gap-6 auto-rows-[60rem_30rem] lg:auto-rows-[44rem_22rem] lg:grid-cols-2">
         <ChatBox />
         <UploadCard />
         <RestCard />
