@@ -1,10 +1,5 @@
 import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
-import type {
-  ChromaClient as ChromaSdkClient,
-  Metadata,
-  Where,
-  WhereDocument,
-} from "chromadb";
+import type { Metadata, Where, WhereDocument } from "chromadb";
 import { Effect, Layer, ServiceMap } from "effect";
 import { ChromaService } from "./ChromaService";
 
@@ -13,23 +8,6 @@ export type RagHit = Readonly<{
   score: number | null;
   document: string | null;
   metadata: Record<string, unknown> | null;
-}>;
-
-export type RagIngestInput = Readonly<{
-  collection: string;
-  ids: Array<string>;
-  embeddings: Array<Array<number>>;
-  documents?: Array<string>;
-  metadatas?: Metadata[];
-  ensureCollection?: boolean;
-}>;
-
-export type RagRetrieveInput = Readonly<{
-  collection: string;
-  embedding: Array<number>;
-  topK: number;
-  where?: Where;
-  whereDocument?: WhereDocument;
 }>;
 
 const normalizeHits = (result: {
@@ -47,7 +25,7 @@ const normalizeHits = (result: {
     id,
     score: distances[index] ?? null,
     document: documents[index] ?? null,
-    metadata: (metadatas[index] as Record<string, unknown> | null) ?? null,
+    metadata: metadatas[index] ?? null,
   }));
 };
 
@@ -55,41 +33,52 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
   make: Effect.gen(function* () {
     const chroma = yield* ChromaService;
 
-    const getCollection = (name: string, ensureCollection: boolean) =>
+    const getCollection = (name: string) =>
       chroma.use((sdk) =>
-        ensureCollection
-          ? sdk.getOrCreateCollection({
-              name,
-              embeddingFunction: new DefaultEmbeddingFunction(),
-            })
-          : sdk.getCollection({ name }),
+        sdk.getOrCreateCollection({
+          name,
+          embeddingFunction: new DefaultEmbeddingFunction(),
+        }),
       );
 
-    const ingest = Effect.fn("ingest")(function* (input: RagIngestInput) {
+    const ingest = Effect.fn("ingest")(function* (
+      input: Readonly<{
+        collection: string;
+        ids: Array<string>;
+        embeddings?: Array<Array<number>>;
+        documents?: Array<string>;
+        metadatas?: Metadata[];
+      }>,
+    ) {
       yield* Effect.log(
         `[RagService] Ingest request received for collection "${input.collection}" with ${input.ids.length} items`,
-      ); // Log the ingest request details
-      const collection = yield* getCollection(
-        input.collection,
-        input.ensureCollection ?? true,
       );
+      const collection = yield* getCollection(input.collection);
 
-      yield* chroma.use((_client: ChromaSdkClient) => {
-        return collection.upsert({
+      yield* Effect.tryPromise(() =>
+        collection.upsert({
           ids: input.ids,
-          embeddings: input.embeddings,
+          ...(input.embeddings ? { embeddings: input.embeddings } : {}),
           ...(input.documents ? { documents: input.documents } : {}),
           ...(input.metadatas ? { metadatas: input.metadatas } : {}),
-        });
-      });
+        }),
+      );
 
       return { count: input.ids.length } as const;
     });
 
-    const retrieve = Effect.fn("retrieve")(function* (input: RagRetrieveInput) {
-      const collection = yield* getCollection(input.collection, true);
+    const retrieve = Effect.fn("retrieve")(function* (
+      input: Readonly<{
+        collection: string;
+        embedding: Array<number>;
+        topK: number;
+        where?: Where;
+        whereDocument?: WhereDocument;
+      }>,
+    ) {
+      const collection = yield* getCollection(input.collection);
 
-      const result = yield* chroma.use((_client: ChromaSdkClient) =>
+      const result = yield* Effect.tryPromise(() =>
         collection.query({
           queryEmbeddings: [input.embedding],
           nResults: input.topK,
