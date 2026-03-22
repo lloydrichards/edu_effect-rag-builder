@@ -3,16 +3,16 @@ import { OpenAiClient, OpenAiEmbeddingModel } from "@effect/ai-openai";
 import { Config, Layer } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 
-const AnthropicLive = AnthropicClient.layerConfig({
-  apiKey: Config.redacted("ANTHROPIC_API_KEY"),
-}).pipe(Layer.provide(FetchHttpClient.layer));
-
 const OpenAiLive = OpenAiClient.layerConfig({
   apiKey: Config.redacted("OPENAI_API_KEY"),
 }).pipe(Layer.provide(FetchHttpClient.layer));
 
+const AnthropicLive = AnthropicClient.layerConfig({
+  apiKey: Config.redacted("ANTHROPIC_API_KEY"),
+}).pipe(Layer.provide(FetchHttpClient.layer));
+
 export const SmartModelLive = AnthropicLanguageModel.layer({
-  model: "claude-sonnet-4-5",
+  model: "claude-sonnet-4-6",
 }).pipe(Layer.provide(AnthropicLive));
 
 export const FastModelLive = AnthropicLanguageModel.layer({

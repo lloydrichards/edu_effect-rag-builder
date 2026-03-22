@@ -31,6 +31,7 @@ USER server
 
 COPY --from=builder /app/apps/server/dist/index.js ./server/index.js
 COPY --from=builder /app/apps/server/package.json ./server/package.json
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 9000
 

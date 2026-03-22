@@ -1,77 +1,41 @@
-name: bevr-app
+name: edu_effect-rag-builder
 services:
   server:
     build:
       context: .
       dockerfile: ./apps/server/Dockerfile
     environment:
-      PORT: 9000
+      PORT: ${SERVER_PORT:-9000}
       HOST: 0.0.0.0
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: bevr-server
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CHROMA_HOST: chroma
       CHROMA_PORT: 8000
     expose:
-      - "9000"
+      - "${SERVER_PORT:-9000}"
     networks:
       - app-network
     depends_on:
       - chroma
-
-  server-mcp:
-    build:
-      context: .
-      dockerfile: ./apps/server-mcp/Dockerfile
-    environment:
-      MCP_PORT: 8000
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: bevr-server-mcp
-    expose:
-      - "8000"
-    networks:
-      - app-network
 
   client:
     build:
       context: .
       dockerfile: ./apps/client/Dockerfile
       args:
-        SERVER_URL: ${SERVER_URL:-http://localhost:9000}
-    expose:
-      - "80"
+        SERVER_URL: ${SERVER_URL:-http://localhost:${SERVER_PORT:-9000}}
+        CLIENT_PORT: ${CLIENT_PORT:-3000}
+    ports:
+      - "${CLIENT_PORT:-3000}:${CLIENT_PORT:-3000}"
     networks:
       - app-network
     depends_on:
       - server
-      - server-mcp
 
   chroma:
     image: chromadb/chroma
-    ports:
-      - "8000:8000"
     volumes:
       - data:/data
-    networks:
-      - app-network
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.116.1
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./support/otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    expose:
-      - "4317"
-      - "4318"
-    networks:
-      - app-network
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.63.0
-    ports:
-      - "16686:16686"
-    expose:
-      - "14250"
     networks:
       - app-network
 

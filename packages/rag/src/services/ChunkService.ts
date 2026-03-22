@@ -8,6 +8,7 @@ import {
   ServiceMap,
   String,
 } from "effect";
+import "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
 
 const MAX_CHUNK_CHARS = 1200;
