@@ -1,6 +1,14 @@
-import type { UploadChunk } from "@repo/domain/Upload";
+import type { UploadIngestEvent } from "@repo/domain/Upload";
 import { ChunkService, RagService } from "@repo/rag";
-import { Array, Effect, Layer, Ref, ServiceMap } from "effect";
+import {
+  Array,
+  type Cause,
+  Effect,
+  Layer,
+  Queue,
+  Ref,
+  ServiceMap,
+} from "effect";
 
 const COLLECTION_NAME = "uploads";
 const INGEST_BATCH_SIZE = 1000;
@@ -21,17 +29,18 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
       const uploadsRef = yield* Ref.make(new Map<string, UploadEntry>());
 
       const handleChunk = Effect.fn("handleChunk")(function* ({
-        fileId,
+        id,
         fileName,
         chunkIndex,
         totalChunks,
         data,
-      }: typeof UploadChunk.Type) {
+      }) {
+        const queue = yield* Queue.unbounded<
+          typeof UploadIngestEvent.Type,
+          Cause.Done
+        >();
         const current = yield* Ref.get(uploadsRef);
-        yield* Effect.log(
-          `Received chunk ${chunkIndex + 1}/${totalChunks} for file ${fileName} (ID: ${fileId})`,
-        );
-        const entry: UploadEntry = current.get(fileId) ?? {
+        const entry: UploadEntry = current.get(id) ?? {
           fileName,
           totalChunks,
           chunks: new Map<number, string>(),
@@ -40,11 +49,17 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
         entry.chunks.set(chunkIndex, data);
 
         const next = new Map(current);
-        next.set(fileId, entry);
+        next.set(id, entry);
         yield* Ref.set(uploadsRef, next);
 
         if (entry.chunks.size < totalChunks) {
-          return { ok: true, status: "chunk-received" } as const;
+          yield* Queue.offer(queue, {
+            _tag: "chunk-received",
+            id,
+            chunkIndex,
+          });
+          yield* Queue.end(queue);
+          return queue;
         }
 
         const ingestEffect = Effect.gen(function* () {
@@ -52,7 +67,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
           for (let index = 0; index < totalChunks; index++) {
             const part = entry.chunks.get(index);
             if (!part) {
-              throw new Error(`Missing chunk ${index} for ${fileId}`);
+              throw new Error(`Missing chunk ${index} for ${id}`);
             }
             buffers.push(Buffer.from(part, "base64"));
           }
@@ -69,7 +84,17 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
             yield* Effect.log(
               `Upload ingest complete: ${fileName} (0 chunks, ${contentBuffer.length} bytes)`,
             );
-            return { ok: true, status: "ingest-complete" } as const;
+            yield* Queue.offer(queue, {
+              _tag: "ingest-start",
+              id,
+            });
+            yield* Queue.offer(queue, {
+              _tag: "ingest-complete",
+              id,
+              total: 0,
+            });
+            yield* Queue.end(queue);
+            return;
           }
 
           const mimeType = chunker.resolveMimeType(
@@ -78,10 +103,10 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
 
           const documents = contentChunks.map((chunk, index) => ({
             collection: COLLECTION_NAME,
-            id: `${fileId}-${index}`,
+            id: `${id}-${index}`,
             document: chunk.text,
             metadata: {
-              fileId,
+              fileId: id,
               fileName,
               mimeType,
               chunkIndex: index,
@@ -105,15 +130,34 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
           yield* Effect.log(
             `Starting ingest for ${fileName}: ${contentChunks.length} chunks in ${chunks.length} batches (${contentBuffer.length} bytes, first chunk preview: "${chunkPreview}")`,
           );
+          yield* Queue.offer(queue, {
+            _tag: "ingest-start",
+            id,
+          });
           yield* Effect.forEach(
             chunks,
-            (batch) =>
-              rag.ingest({
-                collection: COLLECTION_NAME,
-                ids: batch.map((d) => d.id),
-                documents: batch.map((d) => d.document),
-                metadatas: batch.map((d) => d.metadata),
-              }),
+            (batch, batchIndex) =>
+              rag
+                .ingest({
+                  collection: COLLECTION_NAME,
+                  ids: batch.map((d) => d.id),
+                  documents: batch.map((d) => d.document),
+                  metadatas: batch.map((d) => d.metadata),
+                })
+                .pipe(
+                  Effect.tap(() =>
+                    Queue.offer(queue, {
+                      _tag: "ingest-progress",
+                      id,
+
+                      processed: Math.min(
+                        (batchIndex + 1) * INGEST_BATCH_SIZE,
+                        contentChunks.length,
+                      ),
+                      total: contentChunks.length,
+                    }),
+                  ),
+                ),
             {
               concurrency: 1,
             },
@@ -122,25 +166,47 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
           yield* Effect.log(
             `Upload ingest complete: ${fileName} (${contentChunks.length} chunks)`,
           );
-
-          return { ok: true, status: "ingest-complete" } as const;
+          yield* Queue.offer(queue, {
+            _tag: "ingest-complete",
+            id,
+            total: contentChunks.length,
+          });
+          yield* Queue.end(queue);
         });
 
-        return yield* ingestEffect.pipe(
+        yield* Queue.offer(queue, {
+          _tag: "chunk-received",
+          id,
+          chunkIndex,
+        });
+
+        const runIngest = ingestEffect.pipe(
           Effect.ensuring(
             Ref.update(uploadsRef, (map) => {
               const updated = new Map(map);
-              updated.delete(fileId);
+              updated.delete(id);
               return updated;
             }),
           ),
           Effect.tapError((error) =>
-            chunker.logIngestError(fileName, fileId, error),
+            chunker.logIngestError(fileName, id, error),
           ),
-          Effect.orElseSucceed(
-            () => ({ ok: true, status: "ingest-failed" }) as const,
+          Effect.tapError((error) =>
+            Queue.offer(queue, {
+              _tag: "ingest-failed",
+              id,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : globalThis.String(error),
+            }),
           ),
+          Effect.catch(() => Effect.void),
+          Effect.ensuring(Queue.end(queue)),
         );
+
+        yield* Effect.forkScoped(runIngest);
+        return queue;
       });
 
       return { handleChunk } as const;

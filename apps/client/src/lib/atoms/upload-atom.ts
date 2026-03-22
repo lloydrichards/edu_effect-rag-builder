@@ -5,8 +5,9 @@ import {
   type FileUploadEntry,
   MAX_FILE_SIZE,
   type UploadChunk,
+  type UploadIngestEvent,
 } from "@repo/domain/Upload";
-import { Effect, Stream } from "effect";
+import { Effect, Queue, Stream } from "effect";
 import { runtime } from "../atom";
 import { RpcClient } from "../rpc-client";
 
@@ -27,6 +28,15 @@ const isAcceptedFile = (file: File): boolean => {
   );
 };
 
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const ingestShareForSize = (bytes: number) => {
+  const sizeMb = Math.max(bytes / (1024 * 1024), 0.0001);
+  const share = 0.5 + 0.2 * Math.log10(sizeMb / 0.025);
+  return clamp(share, 0.5, 0.9);
+};
+
 const readChunkAsBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -38,18 +48,13 @@ const readChunkAsBase64 = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
-type UploadAck = {
-  readonly ok: true;
-  readonly status: "chunk-received" | "ingest-complete" | "ingest-failed";
-};
+type RpcClientService = RpcClient["Service"];
 
 const sendChunk = (
+  rpc: RpcClientService,
   chunk: UploadChunk,
-): Effect.Effect<UploadAck, unknown, RpcClient> =>
-  Effect.gen(function* () {
-    const rpc = yield* RpcClient;
-    return yield* rpc.client.uploadChunk(chunk);
-  });
+): Stream.Stream<typeof UploadIngestEvent.Type> =>
+  rpc.client.uploadChunk(chunk).pipe(Stream.catch(() => Stream.empty));
 
 export type UploadState = {
   readonly files: readonly FileUploadEntry[];
@@ -71,7 +76,7 @@ type UploadEvent =
   | {
       readonly _tag: "ingest";
       readonly id: string;
-      readonly status: "complete" | "error";
+      readonly status: "start" | "complete" | "error";
     };
 
 export const uploadAtom = runtime.fn((files: readonly File[]) => {
@@ -144,7 +149,12 @@ export const uploadAtom = runtime.fn((files: readonly File[]) => {
                   ? {
                       ...f,
                       status:
-                        event.status === "complete" ? "complete" : "error",
+                        event.status === "complete"
+                          ? "complete"
+                          : event.status === "error"
+                            ? "error"
+                            : f.status,
+                      ingesting: event.status === "start",
                       error:
                         event.status === "error"
                           ? "Ingest failed. Check server logs."
@@ -163,67 +173,128 @@ const uploadFile = (
   entry: FileUploadEntry,
   file: File,
 ): Stream.Stream<UploadEvent, never, RpcClient> =>
-  Stream.concat(
-    Stream.fromIterable<UploadEvent>([
-      { _tag: "status", id: entry.id, status: "reading" },
-    ]),
-    Stream.fromEffect(
-      Effect.result(
-        Effect.gen(function* () {
-          const events: UploadEvent[] = [
-            { _tag: "status", id: entry.id, status: "uploading" },
-          ];
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const rpc = yield* RpcClient;
 
-          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      return Stream.concat(
+        Stream.fromIterable<UploadEvent>([
+          { _tag: "status", id: entry.id, status: "reading" },
+          { _tag: "status", id: entry.id, status: "uploading" },
+        ]),
+        Stream.callback<UploadEvent>((queue) =>
+          Effect.gen(function* () {
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const ingestShare = ingestShareForSize(file.size);
+            const uploadShare = 1 - ingestShare;
+            const uploadSharePct = Math.round(uploadShare * 100);
 
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const blob = file.slice(start, end);
-            const data = yield* Effect.promise(() => readChunkAsBase64(blob));
+            for (let i = 0; i < totalChunks; i++) {
+              const start = i * CHUNK_SIZE;
+              const end = Math.min(start + CHUNK_SIZE, file.size);
+              const blob = file.slice(start, end);
+              const data = yield* Effect.promise(() => readChunkAsBase64(blob));
 
-            const ack = yield* sendChunk({
-              fileId: entry.id,
-              fileName: file.name,
-              chunkIndex: i,
-              totalChunks,
-              data,
-            });
+              const uploadProgress = Math.round(
+                ((i + 1) / totalChunks) * uploadSharePct,
+              );
+              yield* Queue.offer(queue, {
+                _tag: "progress",
+                id: entry.id,
+                chunksUploaded: i + 1,
+                progress: Math.min(uploadProgress, uploadSharePct),
+              });
 
-            if (ack.status === "ingest-complete") {
-              events.push({ _tag: "ingest", id: entry.id, status: "complete" });
-            } else if (ack.status === "ingest-failed") {
-              events.push({ _tag: "ingest", id: entry.id, status: "error" });
+              yield* sendChunk(rpc, {
+                fileId: entry.id,
+                fileName: file.name,
+                chunkIndex: i,
+                totalChunks,
+                data,
+              }).pipe(
+                Stream.runForEach((ingestEvent) =>
+                  Effect.gen(function* () {
+                    switch (ingestEvent._tag) {
+                      case "ingest-start": {
+                        yield* Queue.offer(queue, {
+                          _tag: "ingest",
+                          id: entry.id,
+                          status: "start",
+                        });
+                        break;
+                      }
+                      case "ingest-progress": {
+                        yield* Queue.offer(queue, {
+                          _tag: "ingest",
+                          id: entry.id,
+                          status: "start",
+                        });
+                        const progress =
+                          ingestEvent.total > 0
+                            ? Math.round(
+                                uploadSharePct +
+                                  ingestShare *
+                                    100 *
+                                    (ingestEvent.processed / ingestEvent.total),
+                              )
+                            : 100;
+                        yield* Queue.offer(queue, {
+                          _tag: "progress",
+                          id: entry.id,
+                          chunksUploaded: i + 1,
+                          progress: Math.min(progress, 100),
+                        });
+                        break;
+                      }
+                      case "ingest-complete": {
+                        yield* Queue.offer(queue, {
+                          _tag: "ingest",
+                          id: entry.id,
+                          status: "complete",
+                        });
+                        yield* Queue.offer(queue, {
+                          _tag: "progress",
+                          id: entry.id,
+                          chunksUploaded: i + 1,
+                          progress: 100,
+                        });
+                        break;
+                      }
+                      case "ingest-failed": {
+                        yield* Queue.offer(queue, {
+                          _tag: "ingest",
+                          id: entry.id,
+                          status: "error",
+                        });
+                        break;
+                      }
+                      default:
+                        break;
+                    }
+                  }),
+                ),
+              );
             }
 
-            events.push({
-              _tag: "progress",
-              id: entry.id,
-              chunksUploaded: i + 1,
-              progress: Math.round(((i + 1) / totalChunks) * 100),
-            });
-          }
-
-          return events;
-        }),
-      ),
-    ).pipe(
-      Stream.flatMap((result) =>
-        result._tag === "Success"
-          ? Stream.fromIterable(result.success)
-          : Stream.fromIterable<UploadEvent>([
-              {
-                _tag: "status",
-                id: entry.id,
-                status: "error",
-                error:
-                  result.failure instanceof Error
-                    ? result.failure.message
-                    : String(result.failure),
-              },
-            ]),
-      ),
-    ),
+            yield* Queue.end(queue);
+          }).pipe(
+            Effect.catch((error: unknown) =>
+              Effect.gen(function* () {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                yield* Queue.offer(queue, {
+                  _tag: "status",
+                  id: entry.id,
+                  status: "error",
+                  error: message,
+                });
+                yield* Queue.end(queue);
+              }),
+            ),
+          ),
+        ),
+      );
+    }),
   );
 
 export const validateFiles = (

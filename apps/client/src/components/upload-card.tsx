@@ -223,6 +223,17 @@ function FileRow({ entry }: { entry: FileUploadEntry }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-xs font-medium">{entry.name}</span>
+          {entry.ingesting && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[0.55rem] font-medium text-muted-foreground">
+              ingesting...
+            </span>
+          )}
+          {entry.status === "error" &&
+            entry.error?.toLowerCase().includes("ingest failed") && (
+              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[0.55rem] font-medium text-destructive">
+                ingest failed
+              </span>
+            )}
           <span className="shrink-0 text-[0.6rem] text-muted-foreground">
             {formatSize(entry.size)}
           </span>
