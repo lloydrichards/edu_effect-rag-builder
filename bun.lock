@@ -122,6 +122,7 @@
       "dependencies": {
         "@chroma-core/default-embed": "^0.1.9",
         "@effect/ai-anthropic": "4.0.0-beta.36",
+        "@napi-rs/canvas": "^0.1.74",
         "@repo/domain": "workspace:*",
         "chromadb": "^3.4.0",
         "effect": "4.0.0-beta.36",
