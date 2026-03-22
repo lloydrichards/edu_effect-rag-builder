@@ -1,6 +1,8 @@
 import type { ChatStreamPart } from "@repo/domain/Chat";
+import type { ChromaError, RagError } from "@repo/rag";
 import { Cause, Effect, Layer, Queue, ServiceMap, String } from "effect";
-import { Chat, type LanguageModel, Prompt } from "effect/unstable/ai";
+import { Chat, type LanguageModel, Prompt, Toolkit } from "effect/unstable/ai";
+import { RagToolkit } from "../toolkits/RagToolkit";
 import { SampleToolkit } from "../toolkits/SampleToolkit";
 import { runAgenticLoop } from "../workflow/AgenticLoop";
 
@@ -38,7 +40,7 @@ export class ChatService extends ServiceMap.Service<ChatServiceApi>()(
               Prompt.make(history).pipe(Prompt.setSystem(systemMessage)),
             );
 
-            const toolkit = yield* SampleToolkit;
+            const toolkit = yield* Toolkit.merge(SampleToolkit, RagToolkit);
 
             yield* runAgenticLoop({
               chat: session,
@@ -64,7 +66,11 @@ export class ChatService extends ServiceMap.Service<ChatServiceApi>()(
       });
 
       return { chat } as const;
-    }) as Effect.Effect<ChatServiceApi, never, LanguageModel.LanguageModel>,
+    }) as Effect.Effect<
+      ChatServiceApi,
+      ChromaError | RagError,
+      LanguageModel.LanguageModel
+    >,
   },
 ) {}
 

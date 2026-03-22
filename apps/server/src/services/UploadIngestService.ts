@@ -1,12 +1,10 @@
 import type { UploadChunk } from "@repo/domain/Upload";
 import { RagService } from "@repo/rag";
 import { Array, Effect, Layer, Ref, ServiceMap } from "effect";
-import { EmbeddingModel } from "effect/unstable/ai";
 
 const COLLECTION_NAME = "uploads";
-const CHUNK_SIZE = 2000;
-const CHUNK_OVERLAP = 200;
-const EMBEDDING_BATCH_SIZE = 200;
+const INGEST_BATCH_SIZE = 1000;
+const PREVIEW_MAX_LENGTH = 180;
 
 type UploadEntry = {
   fileName: string;
@@ -14,25 +12,43 @@ type UploadEntry = {
   chunks: Map<number, string>;
 };
 
-const chunkText = (text: string): string[] => {
-  if (text.length === 0) {
+const splitSentences = (text: string): string[] => {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) {
     return [];
   }
 
-  const overlap = Math.min(CHUNK_OVERLAP, Math.floor(CHUNK_SIZE / 2));
-  const chunks: string[] = [];
-  let start = 0;
-
-  while (start < text.length) {
-    const end = Math.min(start + CHUNK_SIZE, text.length);
-    chunks.push(text.slice(start, end));
-    if (end === text.length) {
-      break;
-    }
-    start = Math.max(0, end - overlap);
+  const matches = normalized.match(/[^.!?]+(?:[.!?]+|$)/g);
+  if (!matches) {
+    return [];
   }
 
-  return chunks;
+  return matches.map((sentence) => sentence.trim()).filter(Boolean);
+};
+
+const splitLines = (text: string): string[] => {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  return normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+};
+
+const chunkText = (fileName: string, text: string): string[] => {
+  const extension = getFileExtension(fileName);
+  switch (extension) {
+    case ".csv":
+      return splitLines(text);
+    case ".txt":
+    case ".md":
+      return splitSentences(text);
+    default:
+      return [];
+  }
 };
 
 const getFileExtension = (fileName: string) => {
@@ -56,6 +72,28 @@ const resolveMimeType = (extension: string) => {
   }
 };
 
+const truncatePreview = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+
+const logIngestError = (fileName: string, fileId: string, error: unknown) => {
+  if (error instanceof Error) {
+    return Effect.logError(
+      `Upload ingest failed for ${fileName} (ID: ${fileId}): ${error.name}: ${error.message}`,
+    );
+  }
+
+  let serialized: string | null = null;
+  try {
+    serialized = JSON.stringify(error);
+  } catch {
+    serialized = null;
+  }
+
+  return Effect.logError(
+    `Upload ingest failed for ${fileName} (ID: ${fileId}): ${serialized ?? String(error)}`,
+  );
+};
+
 const extractText = (fileName: string, buffer: Buffer) => {
   const extension = getFileExtension(fileName);
   switch (extension) {
@@ -73,7 +111,6 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
   {
     make: Effect.gen(function* () {
       const rag = yield* RagService;
-      const embeddingModel = yield* EmbeddingModel.EmbeddingModel;
       const uploadsRef = yield* Ref.make(new Map<string, UploadEntry>());
 
       const handleChunk = Effect.fn("handleChunk")(function* ({
@@ -115,36 +152,53 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
 
           const contentBuffer = Buffer.concat(buffers);
           const contentText = extractText(fileName, contentBuffer);
-          const contentChunks = chunkText(contentText);
+          const contentChunks = chunkText(fileName, contentText);
 
           if (contentChunks.length === 0) {
-            yield* Effect.log(`Upload ingest complete: ${fileName} (0 chunks)`);
+            yield* Effect.log(
+              `Upload ingest complete: ${fileName} (0 chunks, ${contentBuffer.length} bytes)`,
+            );
             return { ok: true, status: "ingest-complete" } as const;
           }
 
-          const batchResponses = yield* Effect.forEach(
-            Array.chunksOf(contentChunks, EMBEDDING_BATCH_SIZE),
-            (batch) => embeddingModel.embedMany(batch),
-            { concurrency: 1 },
-          );
-          const vectors = batchResponses.flatMap((response) =>
-            response.embeddings.map((embedding) => [...embedding.vector]),
-          );
           const mimeType = resolveMimeType(getFileExtension(fileName));
 
-          yield* rag.ingest({
+          const documents = contentChunks.map((c, index) => ({
             collection: COLLECTION_NAME,
-            ids: contentChunks.map((_, index) => `${fileId}:${index}`),
-            embeddings: vectors,
-            documents: contentChunks,
-            metadatas: contentChunks.map((_, index) => ({
+            id: `${fileId}-${index}`,
+            document: c,
+            metadata: {
               fileId,
               fileName,
               mimeType,
               chunkIndex: index,
               totalChunks: contentChunks.length,
-            })),
-          });
+            },
+          }));
+
+          const chunks = Array.chunksOf(documents, INGEST_BATCH_SIZE);
+
+          const chunkPreview = truncatePreview(
+            contentChunks[0] ?? "",
+            PREVIEW_MAX_LENGTH,
+          );
+
+          yield* Effect.log(
+            `Starting ingest for ${fileName}: ${contentChunks.length} chunks in ${chunks.length} batches (${contentBuffer.length} bytes, first chunk preview: "${chunkPreview}")`,
+          );
+          yield* Effect.forEach(
+            chunks,
+            (batch) =>
+              rag.ingest({
+                collection: COLLECTION_NAME,
+                ids: batch.map((d) => d.id),
+                documents: batch.map((d) => d.document),
+                metadatas: batch.map((d) => d.metadata),
+              }),
+            {
+              concurrency: 1,
+            },
+          );
 
           yield* Effect.log(
             `Upload ingest complete: ${fileName} (${contentChunks.length} chunks)`,
@@ -161,11 +215,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
               return updated;
             }),
           ),
-          Effect.tapError((error) =>
-            Effect.logError(
-              `Upload ingest failed for ${fileName}: ${String(error)}`,
-            ),
-          ),
+          Effect.tapError((error) => logIngestError(fileName, fileId, error)),
           Effect.orElseSucceed(
             () => ({ ok: true, status: "ingest-failed" }) as const,
           ),
