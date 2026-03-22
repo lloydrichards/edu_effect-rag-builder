@@ -6,10 +6,6 @@ export class ChromaError extends Data.TaggedError("ChromaError")<{
   cause: unknown;
 }> {}
 
-export class ChromaInitError extends Data.TaggedError("ChromaInitError")<{
-  cause: unknown;
-}> {}
-
 const ChromaConfig = Config.all({
   url: Config.option(Config.string("CHROMA_URL")),
   host: Config.option(Config.string("CHROMA_HOST")),
@@ -38,7 +34,7 @@ export class ChromaService extends ServiceMap.Service<ChromaService>()(
                 port: port ?? 8000,
                 headers,
               }),
-        catch: (cause) => new ChromaInitError({ cause }),
+        catch: (cause) => new ChromaError({ cause }),
       });
 
       const use = <A>(fn: (client: ChromaSdkClient) => Promise<A>) =>
