@@ -1,5 +1,5 @@
 import type { UploadChunk } from "@repo/domain/Upload";
-import { RagService } from "@repo/rag";
+import { ChunkService, RagService } from "@repo/rag";
 import { Array, Effect, Layer, Ref, ServiceMap } from "effect";
 
 const COLLECTION_NAME = "uploads";
@@ -12,105 +12,12 @@ type UploadEntry = {
   chunks: Map<number, string>;
 };
 
-const splitSentences = (text: string): string[] => {
-  const normalized = text.replace(/\r\n/g, "\n").trim();
-  if (normalized.length === 0) {
-    return [];
-  }
-
-  const matches = normalized.match(/[^.!?]+(?:[.!?]+|$)/g);
-  if (!matches) {
-    return [];
-  }
-
-  return matches.map((sentence) => sentence.trim()).filter(Boolean);
-};
-
-const splitLines = (text: string): string[] => {
-  const normalized = text.replace(/\r\n/g, "\n").trim();
-  if (normalized.length === 0) {
-    return [];
-  }
-
-  return normalized
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-};
-
-const chunkText = (fileName: string, text: string): string[] => {
-  const extension = getFileExtension(fileName);
-  switch (extension) {
-    case ".csv":
-      return splitLines(text);
-    case ".txt":
-    case ".md":
-      return splitSentences(text);
-    default:
-      return [];
-  }
-};
-
-const getFileExtension = (fileName: string) => {
-  const parts = fileName.split(".");
-  if (parts.length < 2) {
-    return "";
-  }
-  return `.${parts.at(-1)?.toLowerCase()}`;
-};
-
-const resolveMimeType = (extension: string) => {
-  switch (extension) {
-    case ".txt":
-      return "text/plain";
-    case ".md":
-      return "text/markdown";
-    case ".csv":
-      return "text/csv";
-    default:
-      return "application/octet-stream";
-  }
-};
-
-const truncatePreview = (value: string, maxLength: number) =>
-  value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-
-const logIngestError = (fileName: string, fileId: string, error: unknown) => {
-  if (error instanceof Error) {
-    return Effect.logError(
-      `Upload ingest failed for ${fileName} (ID: ${fileId}): ${error.name}: ${error.message}`,
-    );
-  }
-
-  let serialized: string | null = null;
-  try {
-    serialized = JSON.stringify(error);
-  } catch {
-    serialized = null;
-  }
-
-  return Effect.logError(
-    `Upload ingest failed for ${fileName} (ID: ${fileId}): ${serialized ?? String(error)}`,
-  );
-};
-
-const extractText = (fileName: string, buffer: Buffer) => {
-  const extension = getFileExtension(fileName);
-  switch (extension) {
-    case ".txt":
-    case ".md":
-    case ".csv":
-      return buffer.toString("utf8");
-    default:
-      throw new Error(`Unsupported file type: ${fileName}`);
-  }
-};
-
 export class UploadIngestService extends ServiceMap.Service<UploadIngestService>()(
   "UploadIngestService",
   {
     make: Effect.gen(function* () {
       const rag = yield* RagService;
+      const chunker = yield* ChunkService;
       const uploadsRef = yield* Ref.make(new Map<string, UploadEntry>());
 
       const handleChunk = Effect.fn("handleChunk")(function* ({
@@ -151,8 +58,12 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
           }
 
           const contentBuffer = Buffer.concat(buffers);
-          const contentText = extractText(fileName, contentBuffer);
-          const contentChunks = chunkText(fileName, contentText);
+          const extracted = yield* chunker.extractText(fileName, contentBuffer);
+          const contentChunks = chunker.chunkText(
+            fileName,
+            extracted.text,
+            extracted.pages,
+          );
 
           if (contentChunks.length === 0) {
             yield* Effect.log(
@@ -161,25 +72,33 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
             return { ok: true, status: "ingest-complete" } as const;
           }
 
-          const mimeType = resolveMimeType(getFileExtension(fileName));
+          const mimeType = chunker.resolveMimeType(
+            chunker.getFileExtension(fileName),
+          );
 
-          const documents = contentChunks.map((c, index) => ({
+          const documents = contentChunks.map((chunk, index) => ({
             collection: COLLECTION_NAME,
             id: `${fileId}-${index}`,
-            document: c,
+            document: chunk.text,
             metadata: {
               fileId,
               fileName,
               mimeType,
               chunkIndex: index,
               totalChunks: contentChunks.length,
+              ...(chunk.pageNumber !== undefined
+                ? { pageNumber: chunk.pageNumber }
+                : {}),
+              ...(chunk.pageCount !== undefined
+                ? { pageCount: chunk.pageCount }
+                : {}),
             },
           }));
 
           const chunks = Array.chunksOf(documents, INGEST_BATCH_SIZE);
 
-          const chunkPreview = truncatePreview(
-            contentChunks[0] ?? "",
+          const chunkPreview = chunker.truncatePreview(
+            contentChunks[0]?.text ?? "",
             PREVIEW_MAX_LENGTH,
           );
 
@@ -215,7 +134,9 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
               return updated;
             }),
           ),
-          Effect.tapError((error) => logIngestError(fileName, fileId, error)),
+          Effect.tapError((error) =>
+            chunker.logIngestError(fileName, fileId, error),
+          ),
           Effect.orElseSucceed(
             () => ({ ok: true, status: "ingest-failed" }) as const,
           ),
@@ -223,7 +144,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
       });
 
       return { handleChunk } as const;
-    }),
+    }).pipe(Effect.provide(ChunkService.Default)),
   },
 ) {
   static Default = Layer.effect(UploadIngestService)(UploadIngestService.make);

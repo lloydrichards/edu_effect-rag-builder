@@ -9,18 +9,9 @@ export const ACCEPTED_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "text/csv",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
 ] as const;
 
-export const ACCEPTED_EXTENSIONS = [
-  ".pdf",
-  ".txt",
-  ".md",
-  ".csv",
-  ".docx",
-  ".doc",
-] as const;
+export const ACCEPTED_EXTENSIONS = [".pdf", ".txt", ".md", ".csv"] as const;
 
 // ============================================================================
 // Upload configuration
