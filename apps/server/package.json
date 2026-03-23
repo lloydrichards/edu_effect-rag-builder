@@ -17,7 +17,7 @@
     "url": "https://github.com/your-org/edu_effect-rag-builder.git"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --minify",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --minify --sourcemap --external:msgpackr-extract",
     "build:types": "tsc --emitDeclarationOnly",
     "dev": "bun --watch run src/index.ts",
     "test": "vitest run",
