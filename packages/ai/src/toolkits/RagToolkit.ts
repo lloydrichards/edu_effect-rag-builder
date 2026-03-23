@@ -58,7 +58,28 @@ const RetrieverTool = Tool.make("retriever", {
   failure: Schema.String,
 });
 
-export const RagToolkit = Toolkit.make(listDocumentTool, RetrieverTool);
+const DeleteCollectionTool = Tool.make("deleteCollection", {
+  description:
+    "Delete a collection by name. Example: deleteCollection(collection: 'uploads')",
+  parameters: Schema.Struct({
+    collection: Schema.String.pipe(
+      Schema.annotate({
+        default: "uploads",
+        description: "The name of the collection to delete.",
+      }),
+    ),
+  }),
+  success: Schema.Struct({
+    collection: Schema.String,
+  }),
+  failure: Schema.String,
+});
+
+export const RagToolkit = Toolkit.make(
+  listDocumentTool,
+  RetrieverTool,
+  DeleteCollectionTool,
+);
 
 export const RagToolkitLive = RagToolkit.toLayer(
   Effect.gen(function* () {
@@ -89,11 +110,17 @@ export const RagToolkitLive = RagToolkit.toLayer(
       retriever: (params) =>
         Effect.gen(function* () {
           const embedded = yield* embedder.embed(params.query);
+          yield* Effect.log(
+            `[RagToolkit] Retrieve embed: collection="${params.collection}", queryLength=${params.query.length}, embeddingDims=${embedded.vector.length}`,
+          );
           const retrieveResult = yield* rag.retrieve({
             collection: params.collection,
             embedding: [...embedded.vector],
             topK: 3,
           });
+          yield* Effect.log(
+            `[RagToolkit] Retrieve result: collection="${params.collection}", hits=${retrieveResult.hits.length}`,
+          );
           return {
             documents:
               retrieveResult.hits.map((hit) => ({
@@ -105,6 +132,21 @@ export const RagToolkitLive = RagToolkit.toLayer(
           Effect.catch((error) =>
             Effect.fail(
               "Error retrieving documents from collection '" +
+                params.collection +
+                "': " +
+                String(error),
+            ),
+          ),
+        ),
+      deleteCollection: (params) =>
+        Effect.gen(function* () {
+          return yield* rag.deleteCollection({
+            collection: params.collection,
+          });
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.fail(
+              "Error deleting collection '" +
                 params.collection +
                 "': " +
                 String(error),

@@ -13,6 +13,18 @@ export type RagHit = Readonly<{
   metadata: Record<string, unknown> | null;
 }>;
 
+type CollectionSummary = Readonly<{
+  ids?: Array<string>;
+  documents?: Array<string | null>;
+}>;
+
+type CollectionClient = {
+  get: (input: {
+    limit?: number;
+    include?: Array<"documents">;
+  }) => Promise<CollectionSummary>;
+};
+
 const normalizeHits = (result: {
   ids?: Array<Array<string>>;
   documents?: Array<Array<string | null>>;
@@ -43,6 +55,29 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
         }),
       );
 
+    const logCollectionSummary = Effect.fn("logCollectionSummary")(function* (
+      collection: CollectionClient,
+      label: string,
+    ) {
+      const info = yield* Effect.tryPromise({
+        try: () =>
+          collection.get({
+            limit: 1,
+            include: ["documents"],
+          }),
+        catch: (error) =>
+          new RagError({
+            message: `Error getting collection summary for "${label}"`,
+            cause: error,
+          }),
+      });
+      const firstId = info.ids?.[0] ?? null;
+      const firstDoc = info.documents?.[0] ?? null;
+      yield* Effect.log(
+        `[RagService] Collection summary: ${label}, sampleId=${firstId ?? "none"}, sampleDocLength=${firstDoc ? firstDoc.length : 0}`,
+      );
+    });
+
     const ingest = Effect.fn("ingest")(function* (
       input: Readonly<{
         collection: string;
@@ -55,6 +90,14 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       yield* Effect.log(
         `[RagService] Ingest request received for collection "${input.collection}" with ${input.ids.length} items`,
       );
+      yield* Effect.log(
+        `[RagService] Ingest payload details: documents=${input.documents.length}, embeddings=${input.embeddings ? input.embeddings.length : 0}, metadatas=${input.metadatas ? input.metadatas.length : 0}`,
+      );
+      if (input.embeddings && input.embeddings.length > 0) {
+        yield* Effect.log(
+          `[RagService] Ingest embedding dimensions: first=${input.embeddings[0]?.length ?? 0}`,
+        );
+      }
       const collection = yield* getCollection(input.collection);
 
       yield* Effect.tryPromise({
@@ -72,6 +115,24 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
           }),
       });
 
+      const countResult = yield* Effect.tryPromise({
+        try: () => collection.count(),
+        catch: (error) =>
+          new RagError({
+            message: `Error counting collection "${input.collection}" after ingest`,
+            cause: error,
+          }),
+      });
+      yield* Effect.log(
+        `[RagService] Ingest complete: collection="${input.collection}", count=${countResult}`,
+      );
+      if (countResult > 0) {
+        yield* logCollectionSummary(
+          collection,
+          `${input.collection} after ingest`,
+        );
+      }
+
       return { count: input.ids.length } as const;
     });
 
@@ -85,7 +146,28 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
         whereDocument?: WhereDocument;
       }>,
     ) {
+      yield* Effect.log(
+        `[RagService] Retrieve request: collection="${input.collection}", topK=${input.topK}, queries=${input.queries ? input.queries.length : 0}, embeddingDims=${input.embedding ? input.embedding.length : 0}`,
+      );
       const collection = yield* getCollection(input.collection);
+
+      const countResult = yield* Effect.tryPromise({
+        try: () => collection.count(),
+        catch: (error) =>
+          new RagError({
+            message: `Error counting collection "${input.collection}"`,
+            cause: error,
+          }),
+      });
+      yield* Effect.log(
+        `[RagService] Retrieve collection count: collection="${input.collection}", count=${countResult}`,
+      );
+      if (countResult > 0) {
+        yield* logCollectionSummary(
+          collection,
+          `${input.collection} before retrieve`,
+        );
+      }
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -151,7 +233,21 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       return { documents } as const;
     });
 
-    return { ingest, retrieve, listDocuments } as const;
+    const deleteCollection = Effect.fn("deleteCollection")(function* (input: {
+      collection: string;
+    }) {
+      yield* Effect.log(
+        `[RagService] Deleting collection "${input.collection}"`,
+      );
+
+      yield* chroma.use((sdk) =>
+        sdk.deleteCollection({ name: input.collection }),
+      );
+
+      return { collection: input.collection } as const;
+    });
+
+    return { ingest, retrieve, listDocuments, deleteCollection } as const;
   }),
 }) {
   static Default = Layer.effect(RagService)(RagService.make).pipe(

@@ -143,7 +143,13 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
                 const embeddings = yield* embedder.embedMany(
                   batch.map((d) => d.document),
                 );
-                return rag
+                yield* Effect.log(
+                  `Upload ingest embeddings ready: file=${fileName}, batch=${batchIndex + 1}/${chunks.length}, items=${batch.length}, vectorDims=${embeddings.embeddings[0]?.vector.length ?? 0}`,
+                );
+                yield* Effect.log(
+                  `Upload ingest upsert starting: file=${fileName}, batch=${batchIndex + 1}/${chunks.length}, items=${batch.length}`,
+                );
+                const result = yield* rag
                   .ingest({
                     collection: COLLECTION_NAME,
                     ids: batch.map((d) => d.id),
@@ -152,6 +158,11 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
                     metadatas: batch.map((d) => d.metadata),
                   })
                   .pipe(
+                    Effect.tap((tapResult) =>
+                      Effect.log(
+                        `Upload ingest upsert complete: file=${fileName}, batch=${batchIndex + 1}/${chunks.length}, count=${tapResult.count}`,
+                      ),
+                    ),
                     Effect.tap(() =>
                       Queue.offer(queue, {
                         _tag: "ingest-progress",
@@ -165,6 +176,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
                       }),
                     ),
                   );
+                return result;
               }),
             {
               concurrency: 1,

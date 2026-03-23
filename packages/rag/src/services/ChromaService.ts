@@ -25,6 +25,10 @@ export class ChromaService extends ServiceMap.Service<ChromaService>()(
 
       const headers = headersJson ? JSON.parse(headersJson) : undefined;
 
+      yield* Effect.log(
+        `[ChromaService] Using endpoint: ${url ? `url=${url}` : `host=${host ?? "localhost"} port=${port ?? 8000}`}`,
+      );
+
       const client = yield* Effect.try({
         try: () =>
           url
