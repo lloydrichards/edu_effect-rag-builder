@@ -8,8 +8,7 @@ import {
   ServiceMap,
   String,
 } from "effect";
-import "pdf-parse/worker";
-import { PDFParse } from "pdf-parse";
+import { extractText as extractPdfText } from "unpdf";
 
 const MAX_CHUNK_CHARS = 1200;
 const CHUNK_OVERLAP = 120;
@@ -230,7 +229,7 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         );
       };
 
-      const extractText = (fileName: string, buffer: Buffer) => {
+      const extractFileText = (fileName: string, buffer: Buffer) => {
         const extension = getFileExtension(fileName);
         switch (extension) {
           case ".txt":
@@ -243,17 +242,13 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
           case ".pdf":
             return Effect.tryPromise({
               try: async () => {
-                const parser = new PDFParse({ data: buffer });
-                try {
-                  const result = await parser.getText();
-                  const normalizedText = normalizeWhitespace(result.text ?? "");
-                  return {
-                    text: normalizedText,
-                    pages: undefined,
-                  } as const;
-                } finally {
-                  await parser.destroy();
-                }
+                const result = await extractPdfText(new Uint8Array(buffer), {
+                  mergePages: true,
+                });
+                return {
+                  text: normalizeWhitespace(result.text),
+                  pages: undefined,
+                } as const;
               },
               catch: (error) =>
                 new Error(
@@ -271,7 +266,7 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         getFileExtension,
         truncatePreview,
         logIngestError,
-        extractText,
+        extractText: extractFileText,
       } as const;
     }),
   },

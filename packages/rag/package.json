@@ -19,7 +19,7 @@
     "@repo/domain": "workspace:*",
     "chromadb": "^3.4.0",
     "effect": "4.0.0-beta.36",
-    "pdf-parse": "^2.4.5"
+    "unpdf": "^1.4.0"
   },
   "devDependencies": {
     "@repo/config-typescript": "workspace:*"
