@@ -148,6 +148,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
                     collection: COLLECTION_NAME,
                     ids: batch.map((d) => d.id),
                     embeddings: embeddings.embeddings.map((e) => [...e.vector]),
+                    documents: batch.map((d) => d.document),
                     metadatas: batch.map((d) => d.metadata),
                   })
                   .pipe(

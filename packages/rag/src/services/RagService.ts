@@ -47,8 +47,8 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       input: Readonly<{
         collection: string;
         ids: Array<string>;
+        documents: Array<string>;
         embeddings?: Array<Array<number>>;
-        documents?: Array<string>;
         metadatas?: Metadata[];
       }>,
     ) {
@@ -61,8 +61,8 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
         try: () =>
           collection.upsert({
             ids: input.ids,
+            documents: input.documents,
             ...(input.embeddings ? { embeddings: input.embeddings } : {}),
-            ...(input.documents ? { documents: input.documents } : {}),
             ...(input.metadatas ? { metadatas: input.metadatas } : {}),
           }),
         catch: (error) =>
