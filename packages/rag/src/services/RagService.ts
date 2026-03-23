@@ -1,4 +1,3 @@
-import { DefaultEmbeddingFunction } from "@chroma-core/default-embed";
 import type { Metadata, Where, WhereDocument } from "chromadb";
 import { Data, Effect, Layer, ServiceMap } from "effect";
 import { ChromaService } from "./ChromaService";
@@ -36,6 +35,9 @@ const normalizeHits = (result: {
 export class RagService extends ServiceMap.Service<RagService>()("RagService", {
   make: Effect.gen(function* () {
     const chroma = yield* ChromaService;
+    const { DefaultEmbeddingFunction } = yield* Effect.promise(
+      () => import("@chroma-core/default-embed"),
+    );
 
     const getCollection = (name: string) =>
       chroma.use((sdk) =>

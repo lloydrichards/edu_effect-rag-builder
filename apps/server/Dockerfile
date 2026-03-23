@@ -27,17 +27,14 @@ FROM run-base AS runner
 WORKDIR /app
 
 ENV NODE_ENV production
-ENV HF_HOME=/app/.cache/huggingface
-ENV TRANSFORMERS_CACHE=/app/.cache/huggingface/transformers
 
 RUN groupadd --system --gid 1001 nodejs
 RUN useradd --system --uid 1001 --gid 1001 server
-RUN mkdir -p /app/.cache/huggingface/transformers \
-  && chown -R server:nodejs /app/.cache
 
 COPY --from=builder /app/apps/server ./apps/server
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/node_modules ./node_modules
+RUN chown -R server:nodejs /app/node_modules/.bun
 
 USER server
 
