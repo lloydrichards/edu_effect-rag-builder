@@ -46,6 +46,18 @@ const RetrieverTool = Tool.make("retriever", {
         description: "The query to use for retrieving documents.",
       }),
     ),
+    filename: Schema.NullOr(Schema.String).pipe(
+      Schema.annotate({
+        description:
+          "(optional) The name of the file to retrieve documents from.",
+      }),
+    ),
+    limit: Schema.String.pipe(
+      Schema.annotate({
+        default: "3",
+        description: "(optional) The number of results to retrieve.",
+      }),
+    ),
   }),
   success: Schema.Struct({
     documents: Schema.Array(
@@ -116,7 +128,10 @@ export const RagToolkitLive = RagToolkit.toLayer(
           const retrieveResult = yield* rag.retrieve({
             collection: params.collection,
             embedding: [...embedded.vector],
-            topK: 3,
+            topK: +params.limit,
+            ...(params.filename
+              ? { where: { fileName: { $contains: params.filename } } }
+              : {}),
           });
           yield* Effect.log(
             `[RagToolkit] Retrieve result: collection="${params.collection}", hits=${retrieveResult.hits.length}`,
