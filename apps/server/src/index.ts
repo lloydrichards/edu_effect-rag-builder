@@ -10,7 +10,6 @@ import { EventRpc } from "@repo/domain/Rpc";
 import { ObservabilityLive } from "@repo/observability";
 import { RagService } from "@repo/rag";
 import { Config, Effect, Layer } from "effect";
-import { EmbeddingModel } from "effect/unstable/ai/EmbeddingModel";
 import { DevTools } from "effect/unstable/devtools";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
