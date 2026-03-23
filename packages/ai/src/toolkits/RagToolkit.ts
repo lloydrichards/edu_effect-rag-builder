@@ -1,6 +1,6 @@
 import { RagService } from "@repo/rag";
 import { Effect, Schema } from "effect";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { EmbeddingModel, Tool, Toolkit } from "effect/unstable/ai";
 
 /**
  * List Document Tool - Lists documents in a collection
@@ -63,6 +63,7 @@ export const RagToolkit = Toolkit.make(listDocumentTool, RetrieverTool);
 export const RagToolkitLive = RagToolkit.toLayer(
   Effect.gen(function* () {
     const rag = yield* RagService;
+    const embedder = yield* EmbeddingModel.EmbeddingModel;
     return {
       listDocument: (params) =>
         Effect.gen(function* () {
@@ -87,9 +88,10 @@ export const RagToolkitLive = RagToolkit.toLayer(
         ),
       retriever: (params) =>
         Effect.gen(function* () {
+          const embedded = yield* embedder.embed(params.query);
           const retrieveResult = yield* rag.retrieve({
             collection: params.collection,
-            queries: [params.query],
+            embedding: [...embedded.vector],
             topK: 3,
           });
           return {

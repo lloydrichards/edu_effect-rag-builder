@@ -9,6 +9,7 @@ import {
   Ref,
   ServiceMap,
 } from "effect";
+import { EmbeddingModel } from "effect/unstable/ai";
 
 const COLLECTION_NAME = "uploads";
 const INGEST_BATCH_SIZE = 1000;
@@ -26,6 +27,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
     make: Effect.gen(function* () {
       const rag = yield* RagService;
       const chunker = yield* ChunkService;
+      const embedder = yield* EmbeddingModel.EmbeddingModel;
       const uploadsRef = yield* Ref.make(new Map<string, UploadEntry>());
 
       const handleChunk = Effect.fn("handleChunk")(function* ({
@@ -137,27 +139,32 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
           yield* Effect.forEach(
             chunks,
             (batch, batchIndex) =>
-              rag
-                .ingest({
-                  collection: COLLECTION_NAME,
-                  ids: batch.map((d) => d.id),
-                  documents: batch.map((d) => d.document),
-                  metadatas: batch.map((d) => d.metadata),
-                })
-                .pipe(
-                  Effect.tap(() =>
-                    Queue.offer(queue, {
-                      _tag: "ingest-progress",
-                      id: fileId,
+              Effect.gen(function* () {
+                const embeddings = yield* embedder.embedMany(
+                  batch.map((d) => d.document),
+                );
+                return rag
+                  .ingest({
+                    collection: COLLECTION_NAME,
+                    ids: batch.map((d) => d.id),
+                    embeddings: embeddings.embeddings.map((e) => [...e.vector]),
+                    metadatas: batch.map((d) => d.metadata),
+                  })
+                  .pipe(
+                    Effect.tap(() =>
+                      Queue.offer(queue, {
+                        _tag: "ingest-progress",
+                        id: fileId,
 
-                      processed: Math.min(
-                        (batchIndex + 1) * INGEST_BATCH_SIZE,
-                        contentChunks.length,
-                      ),
-                      total: contentChunks.length,
-                    }),
-                  ),
-                ),
+                        processed: Math.min(
+                          (batchIndex + 1) * INGEST_BATCH_SIZE,
+                          contentChunks.length,
+                        ),
+                        total: contentChunks.length,
+                      }),
+                    ),
+                  );
+              }),
             {
               concurrency: 1,
             },

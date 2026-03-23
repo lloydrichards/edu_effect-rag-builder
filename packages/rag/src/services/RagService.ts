@@ -35,15 +35,11 @@ const normalizeHits = (result: {
 export class RagService extends ServiceMap.Service<RagService>()("RagService", {
   make: Effect.gen(function* () {
     const chroma = yield* ChromaService;
-    const { DefaultEmbeddingFunction } = yield* Effect.promise(
-      () => import("@chroma-core/default-embed"),
-    );
 
     const getCollection = (name: string) =>
       chroma.use((sdk) =>
         sdk.getOrCreateCollection({
           name,
-          embeddingFunction: new DefaultEmbeddingFunction(),
         }),
       );
 
@@ -82,7 +78,7 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
     const retrieve = Effect.fn("retrieve")(function* (
       input: Readonly<{
         collection: string;
-        queries: Array<string>;
+        queries?: Array<string>;
         embedding?: Array<number>;
         topK: number;
         where?: Where;
@@ -94,8 +90,8 @@ export class RagService extends ServiceMap.Service<RagService>()("RagService", {
       const result = yield* Effect.tryPromise({
         try: () =>
           collection.query({
-            queryTexts: input.queries,
             nResults: input.topK,
+            ...(input.queries ? { queryTexts: input.queries } : {}),
             ...(input.embedding ? { queryEmbeddings: [input.embedding] } : {}),
             ...(input.where ? { where: input.where } : {}),
             ...(input.whereDocument

@@ -1,10 +1,16 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun";
-import { ChatServiceLive, SampleToolkitLive, SmartModelLive } from "@repo/ai";
+import {
+  ChatServiceLive,
+  EmbeddingModelLive,
+  SampleToolkitLive,
+  SmartModelLive,
+} from "@repo/ai";
 import { Api } from "@repo/domain/Api";
 import { EventRpc } from "@repo/domain/Rpc";
 import { ObservabilityLive } from "@repo/observability";
 import { RagService } from "@repo/rag";
 import { Config, Effect, Layer } from "effect";
+import { EmbeddingModel } from "effect/unstable/ai/EmbeddingModel";
 import { DevTools } from "effect/unstable/devtools";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -51,6 +57,7 @@ const HttpRpcRouter = RpcServer.layerHttp({
   Layer.provide(SampleToolkitLive),
   Layer.provide(RagToolkitLive),
   Layer.provide(RagService.Default),
+  Layer.provide(EmbeddingModelLive),
   Layer.provide(SmartModelLive),
   Layer.provide(RpcSerialization.layerNdjson),
 );
