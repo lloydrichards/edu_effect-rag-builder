@@ -1,3 +1,4 @@
+import { Github } from "lucide-react";
 import bun from "./assets/bun.svg";
 import effect from "./assets/effect.svg";
 import react from "./assets/react.svg";
@@ -6,6 +7,7 @@ import { ChatBox } from "./components/chat-box";
 import { RestCard } from "./components/rest-card";
 import { RpcCard } from "./components/rpc-card";
 import { ThemeToggle } from "./components/theme-toggle";
+import { Button } from "./components/ui/button";
 import { UploadCard } from "./components/upload-card";
 
 function App() {
@@ -37,6 +39,35 @@ function App() {
         <RestCard />
         <RpcCard />
       </div>
+      <footer className="w-full flex justify-between">
+        <Button
+          variant="link"
+          render={(props) => (
+            <a
+              {...props}
+              href="https://www.lloydrichards.dev"
+              target="_blank"
+              rel="noopener"
+            >
+              lloydrichards.dev
+            </a>
+          )}
+        />
+        <Button
+          variant="link"
+          render={(props) => (
+            <a
+              {...props}
+              href="https://github.com/lloydrichards/edu_effect-rag-builder"
+              target="_blank"
+              rel="noopener"
+            >
+              <Github />
+              Github
+            </a>
+          )}
+        />
+      </footer>
     </div>
   );
 }
