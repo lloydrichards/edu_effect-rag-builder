@@ -1,40 +1,21 @@
 import type { ChatStreamPart } from "@repo/domain/Chat";
 import { type Cause, Effect, type Queue, Ref, Schema, Stream } from "effect";
-import type {
-  AiError,
-  Chat,
-  LanguageModel,
-  Tool,
-  Toolkit,
-} from "effect/unstable/ai";
+import type { Chat, Tool, Toolkit } from "effect/unstable/ai";
 import { createMailboxEvents } from "./MailboxEvents";
-
-export const AgenticLoopState = Schema.Struct({
-  finishReason: Schema.String,
-  iteration: Schema.Number,
-});
-
-export type AgenticLoopResult = Schema.Schema.Type<typeof AgenticLoopState>;
-
-export type AgenticLoopRequirements =
-  | LanguageModel.LanguageModel
-  | Tool.HandlersFor<any>
-  | Tool.HandlerServices<any>
-  | Tool.ResultDecodingServices<any>;
 
 // Schema for parsing tool parameters (JSON string -> object with unknown keys/values)
 export const ToolParamsSchema = Schema.fromJsonString(
   Schema.Record(Schema.String, Schema.Unknown),
 );
 
-const loop = ({
+const loop = <Tools extends Record<string, Tool.Any>>({
   chat,
   queue,
   toolkit,
 }: {
   chat: Chat.Service;
   queue: Queue.Queue<typeof ChatStreamPart.Type, Cause.Done>;
-  toolkit: Toolkit.WithHandler<any>;
+  toolkit: Toolkit.WithHandler<Tools>;
 }) =>
   Effect.gen(function* () {
     const events = createMailboxEvents(queue);
@@ -193,7 +174,7 @@ const loop = ({
     return yield* Ref.get(finishReasonRef);
   });
 
-export const runAgenticLoop = ({
+export const runAgenticLoop = <Tools extends Record<string, Tool.Any>>({
   chat,
   queue,
   toolkit,
@@ -201,13 +182,9 @@ export const runAgenticLoop = ({
 }: {
   chat: Chat.Service;
   queue: Queue.Queue<typeof ChatStreamPart.Type, Cause.Done>;
-  toolkit: Toolkit.WithHandler<any>;
+  toolkit: Toolkit.WithHandler<Tools>;
   maxIterations?: number;
-}): Effect.Effect<
-  AgenticLoopResult,
-  AiError.AiError,
-  AgenticLoopRequirements
-> =>
+}) =>
   Effect.gen(function* () {
     const events = createMailboxEvents(queue);
 

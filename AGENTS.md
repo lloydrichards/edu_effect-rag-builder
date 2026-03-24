@@ -63,13 +63,13 @@ cloned source repos first. When updating dependencies, pull the latest
 commits in these repos to ensure the LLM references current code:
 
 - `.reference/effect/`
-- `.reference/effect-atom/`
+- `.reference/chonkie/`
 
 If any of the folders are missing (they are git ignored), clone them into
 `reference/`:
 
 - `https://github.com/Effect-TS/effect-smol.git` -> `.reference/effect/`
-- `https://github.com/Effect-TS/effect-atom.git` -> `.reference/effect-atom/`
+- `https://github.com/chonkie-inc/chonkie.git` -> `.reference/chonkie/`
 
 ---
 

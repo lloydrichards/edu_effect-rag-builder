@@ -1,5 +1,4 @@
 import type { ChatStreamPart } from "@repo/domain/Chat";
-import type { ChromaError, RagError } from "@repo/rag";
 import { Cause, Effect, Layer, Queue, ServiceMap, String } from "effect";
 import { Chat, type LanguageModel, Prompt, Toolkit } from "effect/unstable/ai";
 import { RagToolkit } from "../toolkits/RagToolkit";
@@ -68,11 +67,7 @@ export class ChatService extends ServiceMap.Service<ChatServiceApi>()(
       });
 
       return { chat } as const;
-    }) as Effect.Effect<
-      ChatServiceApi,
-      ChromaError | RagError,
-      LanguageModel.LanguageModel
-    >,
+    }),
   },
 ) {}
 
