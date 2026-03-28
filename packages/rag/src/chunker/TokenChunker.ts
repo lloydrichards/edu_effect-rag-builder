@@ -52,7 +52,6 @@ export class TokenChunker extends ServiceMap.Service<Chunker>()(
             startIdx,
             endIdx,
             tokenCount: group.length,
-            metadata: {},
           });
 
           currentIndex = endIdx - overlapText.length;

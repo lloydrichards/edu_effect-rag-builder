@@ -103,7 +103,6 @@ export class FastChunker extends ServiceMap.Service<Chunker>()("FastChunker", {
           startIdx: charIndex,
           endIdx: charIndex + textSlice.length,
           tokenCount: textSlice.length,
-          metadata: {},
         });
 
         charIndex += textSlice.length;
