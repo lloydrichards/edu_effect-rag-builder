@@ -4,9 +4,13 @@ export class ChunkError extends Data.TaggedError("ChunkError")<{
   message: string;
   cause?: unknown;
 }> {}
+export class TokenizerError extends Data.TaggedError("TokenizerError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
 export const Chunk = Schema.Struct({
-  test: Schema.String,
+  text: Schema.String,
   startIdx: Schema.Number,
   endIdx: Schema.Number,
   tokenCount: Schema.Number,
@@ -31,7 +35,7 @@ export class Tokenizer extends ServiceMap.Service<
     encode: (text: string) => Effect.Effect<ReadonlyArray<number>>;
     decode: (
       tokens: ReadonlyArray<number>,
-    ) => Effect.Effect<string, ChunkError>;
+    ) => Effect.Effect<string, TokenizerError>;
     countTokens: (text: string) => Effect.Effect<number>;
   }
 >()("Tokenizer") {}
@@ -40,6 +44,8 @@ export class Chunker extends ServiceMap.Service<
   Chunker,
   {
     readonly name: string;
-    chunk: (text: string) => Effect.Effect<Array<Chunk>, ChunkError>;
+    chunk: (
+      text: string,
+    ) => Effect.Effect<Array<Chunk>, ChunkError | TokenizerError>;
   }
 >()("Chunker") {}
