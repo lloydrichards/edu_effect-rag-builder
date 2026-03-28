@@ -14,7 +14,7 @@ export const Chunk = Schema.Struct({
   startIdx: Schema.Number,
   endIdx: Schema.Number,
   tokenCount: Schema.Number,
-  metadata: Schema.Record(Schema.String, Schema.Unknown),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
 });
 
 export type Chunk = typeof Chunk.Type;
