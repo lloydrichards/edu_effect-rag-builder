@@ -15,6 +15,28 @@ const COLLECTION_NAME = "uploads";
 const INGEST_BATCH_SIZE = 1000;
 const PREVIEW_MAX_LENGTH = 180;
 
+const truncatePreview = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+
+const logIngestError = (fileName: string, fileId: string, error: unknown) => {
+  if (error instanceof Error) {
+    return Effect.logError(
+      `Upload ingest failed for ${fileName} (ID: ${fileId}): ${error.name}: ${error.message}`,
+    );
+  }
+
+  let serialized: string | null = null;
+  try {
+    serialized = JSON.stringify(error);
+  } catch {
+    serialized = null;
+  }
+
+  return Effect.logError(
+    `Upload ingest failed for ${fileName} (ID: ${fileId}): ${serialized ?? globalThis.String(error)}`,
+  );
+};
+
 type UploadEntry = {
   fileName: string;
   totalChunks: number;
@@ -76,7 +98,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
 
           const contentBuffer = Buffer.concat(buffers);
           const extracted = yield* chunker.extractText(fileName, contentBuffer);
-          const contentChunks = chunker.chunkText(
+          const contentChunks = yield* chunker.chunkText(
             fileName,
             extracted.text,
             extracted.pages,
@@ -99,9 +121,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
             return;
           }
 
-          const mimeType = chunker.resolveMimeType(
-            chunker.getFileExtension(fileName),
-          );
+          const mimeType = chunker.resolveMimeTypeForFile(fileName);
 
           const documents = contentChunks.map((chunk, index) => ({
             collection: COLLECTION_NAME,
@@ -124,7 +144,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
 
           const chunks = Array.chunksOf(documents, INGEST_BATCH_SIZE);
 
-          const chunkPreview = chunker.truncatePreview(
+          const chunkPreview = truncatePreview(
             contentChunks[0]?.text ?? "",
             PREVIEW_MAX_LENGTH,
           );
@@ -208,9 +228,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
               return updated;
             }),
           ),
-          Effect.tapError((error) =>
-            chunker.logIngestError(fileName, fileId, error),
-          ),
+          Effect.tapError((error) => logIngestError(fileName, fileId, error)),
           Effect.tapError((error) =>
             Queue.offer(queue, {
               _tag: "ingest-failed",
