@@ -1,3 +1,4 @@
+import type { ChunkError, TokenizerError } from "@repo/domain/Chunk";
 import {
   Array,
   Effect,
@@ -9,10 +10,14 @@ import {
   String,
 } from "effect";
 import { extractText as extractPdfText } from "unpdf";
+import { FastChunker } from "../chunker/FastChunker";
+import { SentenceChunker } from "../chunker/SentenceChunker";
+import { TokenChunker } from "../chunker/TokenChunker";
+import { CharacterTokenizerLive } from "../tokenizer/DelimTokenizer";
 
-const MAX_CHUNK_CHARS = 1200;
-const CHUNK_OVERLAP = 120;
-const BASE_CHUNK_CHARS = Math.max(1, MAX_CHUNK_CHARS - CHUNK_OVERLAP);
+const FAST_CHUNK_THRESHOLD_CHARS = 100_000;
+
+type ChunkStrategy = "fast" | "sentence" | "token";
 
 type ChunkEntry = {
   text: string;
@@ -24,6 +29,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
   "ChunkService",
   {
     make: Effect.gen(function* () {
+      const fastChunker = yield* FastChunker;
+      const sentenceChunker = yield* SentenceChunker;
+      const tokenChunker = yield* TokenChunker;
+
       const normalizeWhitespace = (text: string) =>
         pipe(
           text,
@@ -34,142 +43,109 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
           String.trim,
         );
 
-      const splitLines = (text: string): string[] =>
+      const toChunkEntries = (
+        texts: ReadonlyArray<string>,
+        metadata?: { pageNumber?: number; pageCount?: number },
+      ): Array<ChunkEntry> =>
         pipe(
-          normalizeWhitespace(text),
-          String.split("\n"),
-          Array.map(String.trim),
+          texts,
+          Array.map((value) => String.trim(value)),
           Array.filter(String.isNonEmpty),
+          Array.map((text) => ({ text, ...metadata })),
         );
 
-      const splitByLength = (text: string, maxLength: number): string[] =>
-        text.length <= maxLength
-          ? [text]
-          : Array.unfold(0, (index) =>
-              index >= text.length
-                ? Option.none()
-                : Option.some([
-                    text.slice(index, index + maxLength),
-                    index + maxLength,
-                  ]),
-            );
-
-      const splitBySeparators = (
+      const chunkWithStrategy = (
+        strategy: ChunkStrategy,
         text: string,
-        separators: string[],
-        maxLength: number,
-      ): string[] => {
-        const normalized = normalizeWhitespace(text);
-        if (String.isEmpty(normalized)) {
-          return [];
-        }
-
-        if (String.length(normalized) <= maxLength) {
-          return [normalized];
-        }
-
-        return Array.match(separators, {
-          onEmpty: () => splitByLength(normalized, maxLength),
-          onNonEmpty: ([separator, ...rest]) => {
-            if (String.isEmpty(separator)) {
-              return splitByLength(normalized, maxLength);
-            }
-
-            if (!pipe(normalized, String.includes(separator))) {
-              return splitBySeparators(normalized, rest, maxLength);
-            }
-
-            return pipe(
-              normalized,
-              String.split(separator),
-              Array.flatMap((part) => {
-                const trimmed = String.trim(part);
-                if (String.isEmpty(trimmed)) {
-                  return [];
-                }
-
-                return String.length(trimmed) <= maxLength
-                  ? [trimmed]
-                  : splitBySeparators(trimmed, rest, maxLength);
-              }),
+      ): Effect.Effect<Array<string>, ChunkError | TokenizerError> => {
+        switch (strategy) {
+          case "fast":
+            return Effect.map(fastChunker.chunk(text), (chunks) =>
+              chunks.map((chunk) => chunk.text),
             );
-          },
-        });
-      };
-
-      const splitTextWithOverlap = (text: string) => {
-        const baseChunks = splitBySeparators(
-          text,
-          ["\n\n", "\n", ". ", " "],
-          BASE_CHUNK_CHARS,
-        );
-
-        if (CHUNK_OVERLAP <= 0 || baseChunks.length <= 1) {
-          return baseChunks;
+          case "sentence":
+            return Effect.map(sentenceChunker.chunk(text), (chunks) =>
+              chunks.map((chunk) => chunk.text),
+            );
+          case "token":
+            return Effect.map(tokenChunker.chunk(text), (chunks) =>
+              chunks.map((chunk) => chunk.text),
+            );
         }
+      };
 
-        return pipe(
-          baseChunks,
-          Array.map((chunk, index) => {
-            if (index === 0) {
-              return chunk;
-            }
-            const previous = baseChunks[index - 1];
-            if (!previous) {
-              return chunk;
-            }
-            const overlap = String.takeRight(previous, CHUNK_OVERLAP);
-            return String.trim(`${overlap}${chunk}`);
+      const selectStrategy = (
+        extension: string,
+        normalizedText: string,
+      ): Option.Option<ChunkStrategy> => {
+        switch (extension) {
+          case ".csv":
+            return Option.some("token");
+          case ".pdf":
+          case ".txt":
+          case ".md":
+            return Option.some(
+              normalizedText.length >= FAST_CHUNK_THRESHOLD_CHARS
+                ? "fast"
+                : "sentence",
+            );
+          default:
+            return Option.none();
+        }
+      };
+
+      const chunkNormalizedText = (
+        extension: string,
+        normalizedText: string,
+      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> =>
+        pipe(
+          selectStrategy(extension, normalizedText),
+          Option.match({
+            onNone: () => Effect.succeed([] as Array<ChunkEntry>),
+            onSome: (strategy) =>
+              Effect.map(chunkWithStrategy(strategy, normalizedText), (texts) =>
+                toChunkEntries(texts),
+              ),
           }),
-          Array.filter(String.isNonEmpty),
         );
-      };
-
-      const chunkCsv = (text: string): ChunkEntry[] => {
-        const lines = splitLines(text);
-        return lines.flatMap((line) =>
-          splitByLength(line, MAX_CHUNK_CHARS).map((chunk) => ({
-            text: chunk,
-          })),
-        );
-      };
 
       const chunkPdfPages = (
-        pages: string[],
+        pages: Array<string>,
         fallbackText: string,
-      ): ChunkEntry[] => {
+      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> => {
         if (pages.length === 0) {
-          return splitTextWithOverlap(fallbackText).map((chunk) => ({
-            text: chunk,
-          }));
+          return chunkNormalizedText(".pdf", normalizeWhitespace(fallbackText));
         }
 
         const pageCount = pages.length;
-        return pages.flatMap((pageText, index) =>
-          splitTextWithOverlap(pageText).map((chunk) => ({
-            text: chunk,
-            pageNumber: index + 1,
-            pageCount,
-          })),
-        );
+        return Effect.forEach(pages, (pageText, index) =>
+          Effect.map(
+            chunkNormalizedText(".pdf", normalizeWhitespace(pageText)),
+            (entries) =>
+              entries.map((entry) => ({
+                ...entry,
+                pageNumber: index + 1,
+                pageCount,
+              })),
+          ),
+        ).pipe(Effect.map((pagesWithChunks) => pagesWithChunks.flat()));
       };
 
       const chunkText = (
         fileName: string,
         text: string,
-        pages?: string[],
-      ): ChunkEntry[] => {
+        pages?: Array<string>,
+      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> => {
         const extension = getFileExtension(fileName);
         switch (extension) {
-          case ".csv":
-            return chunkCsv(text);
           case ".pdf":
             return chunkPdfPages(pages ?? [], text);
+          case ".csv":
           case ".txt":
           case ".md":
-            return splitTextWithOverlap(text).map((chunk) => ({ text: chunk }));
+            return chunkNormalizedText(extension, normalizeWhitespace(text));
           default:
-            return [];
+            return Effect.succeed([] as Array<ChunkEntry>);
         }
       };
 
@@ -186,7 +162,8 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
               ),
         );
 
-      const resolveMimeType = (extension: string) => {
+      const resolveMimeTypeForFile = (fileName: string) => {
+        const extension = getFileExtension(fileName);
         const mimeTypes = {
           ".pdf": "application/pdf",
           ".txt": "text/plain",
@@ -201,42 +178,14 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         );
       };
 
-      const truncatePreview = (value: string, maxLength: number) =>
-        String.length(value) > maxLength
-          ? `${String.takeLeft(value, maxLength)}...`
-          : value;
-
-      const logIngestError = (
-        fileName: string,
-        fileId: string,
-        error: unknown,
-      ) => {
-        if (error instanceof Error) {
-          return Effect.logError(
-            `Upload ingest failed for ${fileName} (ID: ${fileId}): ${error.name}: ${error.message}`,
-          );
-        }
-
-        let serialized: string | null = null;
-        try {
-          serialized = JSON.stringify(error);
-        } catch {
-          serialized = null;
-        }
-
-        return Effect.logError(
-          `Upload ingest failed for ${fileName} (ID: ${fileId}): ${serialized ?? globalThis.String(error)}`,
-        );
-      };
-
-      const extractFileText = (fileName: string, buffer: Buffer) => {
+      const extractText = (fileName: string, buffer: Buffer) => {
         const extension = getFileExtension(fileName);
         switch (extension) {
           case ".txt":
           case ".md":
           case ".csv":
             return Effect.succeed({
-              text: normalizeWhitespace(buffer.toString("utf8")),
+              text: buffer.toString("utf8"),
               pages: undefined,
             });
           case ".pdf":
@@ -262,14 +211,19 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
 
       return {
         chunkText,
-        resolveMimeType,
-        getFileExtension,
-        truncatePreview,
-        logIngestError,
-        extractText: extractFileText,
+        resolveMimeTypeForFile,
+        extractText,
       } as const;
     }),
   },
 ) {
-  static Default = Layer.effect(ChunkService)(ChunkService.make);
+  static Default = Layer.effect(ChunkService, ChunkService.make).pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        Layer.effect(FastChunker, FastChunker.make),
+        Layer.effect(SentenceChunker, SentenceChunker.make),
+        Layer.effect(TokenChunker, TokenChunker.make),
+      ).pipe(Layer.provide(CharacterTokenizerLive)),
+    ),
+  );
 }
