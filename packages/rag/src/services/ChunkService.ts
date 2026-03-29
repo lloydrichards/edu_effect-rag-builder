@@ -11,13 +11,14 @@ import {
 } from "effect";
 import { extractText as extractPdfText } from "unpdf";
 import { FastChunker } from "../chunker/FastChunker";
+import { RecursiveChunker } from "../chunker/RecursiveChunker";
 import { SentenceChunker } from "../chunker/SentenceChunker";
 import { TokenChunker } from "../chunker/TokenChunker";
 import { CharacterTokenizerLive } from "../tokenizer/DelimTokenizer";
 
 const FAST_CHUNK_THRESHOLD_CHARS = 100_000;
 
-type ChunkStrategy = "fast" | "sentence" | "token";
+type ChunkStrategy = "fast" | "sentence" | "token" | "recursive";
 
 type ChunkEntry = {
   text: string;
@@ -32,6 +33,7 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
       const fastChunker = yield* FastChunker;
       const sentenceChunker = yield* SentenceChunker;
       const tokenChunker = yield* TokenChunker;
+      const recursiveChunker = yield* RecursiveChunker;
 
       const normalizeWhitespace = (text: string) =>
         pipe(
@@ -71,6 +73,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
             return Effect.map(tokenChunker.chunk(text), (chunks) =>
               chunks.map((chunk) => chunk.text),
             );
+          case "recursive":
+            return Effect.map(recursiveChunker.chunk(text), (chunks) =>
+              chunks.map((chunk) => chunk.text),
+            );
         }
       };
 
@@ -81,9 +87,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         switch (extension) {
           case ".csv":
             return Option.some("token");
+          case ".md":
+            return Option.some("recursive");
           case ".pdf":
           case ".txt":
-          case ".md":
             return Option.some(
               normalizedText.length >= FAST_CHUNK_THRESHOLD_CHARS
                 ? "fast"
@@ -223,6 +230,7 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         Layer.effect(FastChunker, FastChunker.make),
         Layer.effect(SentenceChunker, SentenceChunker.make),
         Layer.effect(TokenChunker, TokenChunker.make),
+        Layer.effect(RecursiveChunker, RecursiveChunker.make),
       ).pipe(Layer.provide(CharacterTokenizerLive)),
     ),
   );
