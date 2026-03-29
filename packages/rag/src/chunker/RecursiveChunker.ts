@@ -1,0 +1,309 @@
+import {
+  type Chunk,
+  ChunkError,
+  Chunker,
+  Tokenizer,
+  type TokenizerError,
+} from "@repo/domain/Chunk";
+import { Effect, Layer, ServiceMap } from "effect";
+import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
+
+export type RecursiveRule = {
+  delimiters?: ReadonlyArray<string>;
+  whitespace?: boolean;
+  includeDelim?: "prev" | "next" | null;
+};
+
+type RecursiveChunkerConfig = {
+  chunkSize: number;
+  minCharactersPerChunk: number;
+  rules: ReadonlyArray<RecursiveRule>;
+};
+
+export const RecursiveChunkerConfig =
+  ServiceMap.Reference<RecursiveChunkerConfig>("RecursiveChunkerConfig", {
+    defaultValue: () => ({
+      chunkSize: 2048,
+      minCharactersPerChunk: 24,
+      rules: [
+        { delimiters: ["\n\n"], includeDelim: "prev" },
+        { delimiters: ["\n"], includeDelim: "prev" },
+        { whitespace: true, includeDelim: "prev" },
+        {},
+      ],
+    }),
+  });
+
+const isValidRule = (rule: RecursiveRule): boolean => {
+  const hasDelims =
+    Array.isArray(rule.delimiters) &&
+    rule.delimiters.length > 0 &&
+    rule.delimiters.every((d) => d.length > 0);
+  const hasWhitespace = rule.whitespace === true;
+  return hasDelims || hasWhitespace || (!rule.delimiters && !rule.whitespace);
+};
+
+const isValidConfig = (config: RecursiveChunkerConfig): boolean =>
+  config.chunkSize > 0 &&
+  config.minCharactersPerChunk > 0 &&
+  config.rules.length > 0 &&
+  config.rules.every(isValidRule);
+
+type Span = { startIdx: number; endIdx: number };
+
+const toDelimiterPattern = (delimiters: ReadonlyArray<string>): RegExp => {
+  const alternatives = delimiters
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  return new RegExp(alternatives, "g");
+};
+
+const findMatches = (text: string, pattern: RegExp): Array<Span> =>
+  Array.from(text.matchAll(pattern)).flatMap((match) => {
+    const raw = match[0];
+    const startIdx = match.index;
+    if (raw === undefined || startIdx === undefined) return [];
+    return [{ startIdx, endIdx: startIdx + raw.length }];
+  });
+
+const splitWithMatches = (
+  text: string,
+  matches: ReadonlyArray<Span>,
+  includeDelim: "prev" | "next" | null,
+): Array<string> => {
+  if (matches.length === 0) return text.length === 0 ? [] : [text];
+  const parts: Array<string> = [];
+  switch (includeDelim) {
+    case "prev": {
+      let cursor = 0;
+      for (const match of matches) {
+        parts.push(text.slice(cursor, match.endIdx));
+        cursor = match.endIdx;
+      }
+      if (cursor < text.length) parts.push(text.slice(cursor));
+      break;
+    }
+    case "next": {
+      const first = matches[0];
+      if (first !== undefined) {
+        parts.push(text.slice(0, first.startIdx));
+      }
+      for (let i = 0; i < matches.length; i++) {
+        const current = matches[i];
+        if (current === undefined) continue;
+        const next = matches[i + 1];
+        const end = next?.startIdx ?? text.length;
+        parts.push(text.slice(current.startIdx, end));
+      }
+      break;
+    }
+    default: {
+      let cursor = 0;
+      for (const match of matches) {
+        parts.push(text.slice(cursor, match.startIdx));
+        cursor = match.endIdx;
+      }
+      if (cursor <= text.length) parts.push(text.slice(cursor));
+    }
+  }
+  return parts.filter((part) => part.length > 0);
+};
+
+const enforceMinCharacters = (
+  parts: ReadonlyArray<string>,
+  minCharactersPerChunk: number,
+): Array<string> => {
+  if (parts.length <= 1 || minCharactersPerChunk <= 1) return [...parts];
+  const merged: Array<string> = [];
+  for (const part of parts) {
+    if (part.length < minCharactersPerChunk && merged.length > 0) {
+      merged[merged.length - 1] = `${merged[merged.length - 1]}${part}`;
+    } else {
+      merged.push(part);
+    }
+  }
+  if (merged.length > 1 && merged[0]!.length < minCharactersPerChunk) {
+    merged[1] = `${merged[0]}${merged[1]}`;
+    merged.shift();
+  }
+  return merged;
+};
+
+const splitByRule = (
+  text: string,
+  rule: RecursiveRule,
+  minCharactersPerChunk: number,
+): Array<string> => {
+  if (text.length === 0) return [];
+  const includeDelim = rule.includeDelim ?? "prev";
+  if (rule.delimiters && rule.delimiters.length > 0) {
+    const pattern = toDelimiterPattern(rule.delimiters);
+    const matches = findMatches(text, pattern);
+    const parts = splitWithMatches(text, matches, includeDelim);
+    return enforceMinCharacters(parts, minCharactersPerChunk);
+  }
+  if (rule.whitespace) {
+    const matches = findMatches(text, /\s+/g);
+    const parts = splitWithMatches(text, matches, includeDelim);
+    return enforceMinCharacters(parts, minCharactersPerChunk);
+  }
+  // fallback level: no split here; recursion will use token fallback later
+  return [text];
+};
+
+const mergeSplits = (
+  splits: ReadonlyArray<string>,
+  tokenCounts: ReadonlyArray<number>,
+  chunkSize: number,
+): { mergedSplits: Array<string>; mergedTokenCounts: Array<number> } => {
+  if (splits.length === 0) {
+    return { mergedSplits: [], mergedTokenCounts: [] };
+  }
+  if (splits.length !== tokenCounts.length) {
+    return { mergedSplits: [...splits], mergedTokenCounts: [...tokenCounts] };
+  }
+  const mergedSplits: Array<string> = [];
+  const mergedTokenCounts: Array<number> = [];
+  let currentText = splits[0] ?? "";
+  let currentTokens = tokenCounts[0] ?? 0;
+  for (let i = 1; i < splits.length; i++) {
+    const nextText = splits[i] ?? "";
+    const nextTokens = tokenCounts[i] ?? 0;
+    const canMerge = currentTokens + nextTokens <= chunkSize;
+    if (canMerge) {
+      currentText = `${currentText}${nextText}`;
+      currentTokens += nextTokens;
+    } else {
+      mergedSplits.push(currentText);
+      mergedTokenCounts.push(currentTokens);
+      currentText = nextText;
+      currentTokens = nextTokens;
+    }
+  }
+  mergedSplits.push(currentText);
+  mergedTokenCounts.push(currentTokens);
+  return { mergedSplits, mergedTokenCounts };
+};
+
+const toChunk = (
+  text: string,
+  startIdx: number,
+  tokenCount: number,
+): Chunk => ({
+  text,
+  startIdx,
+  endIdx: startIdx + text.length,
+  tokenCount,
+});
+
+export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
+  "RecursiveChunker",
+  {
+    make: Effect.gen(function* () {
+      const tokenizer = yield* Tokenizer;
+      const { chunkSize, minCharactersPerChunk, rules } =
+        yield* RecursiveChunkerConfig;
+
+      if (!isValidConfig({ chunkSize, minCharactersPerChunk, rules })) {
+        return yield* Effect.fail(
+          new ChunkError({
+            message: "Invalid recursive chunker config",
+          }),
+        );
+      }
+
+      const tokenFallback = Effect.fn(function* (
+        text: string,
+        startOffset: number,
+      ) {
+        const encoded = yield* tokenizer.encode(text);
+        if (encoded.length === 0) return [];
+        const chunks: Array<Chunk> = [];
+        let currentOffset = startOffset;
+        for (let i = 0; i < encoded.length; i += chunkSize) {
+          const group = encoded.slice(i, i + chunkSize);
+          const chunkText = yield* tokenizer.decode(group);
+          chunks.push(toChunk(chunkText, currentOffset, group.length));
+          currentOffset += chunkText.length;
+        }
+        return chunks;
+      });
+
+      const recursiveChunk: (
+        text: string,
+        level: number,
+        startOffset: number,
+      ) => Effect.Effect<Array<Chunk>, ChunkError | TokenizerError> = (
+        text,
+        level,
+        startOffset,
+      ) =>
+        Effect.gen(function* () {
+          if (text.length === 0) return [];
+          if (level >= rules.length) {
+            const tokenCount = yield* tokenizer.countTokens(text);
+            if (tokenCount > chunkSize) {
+              return yield* tokenFallback(text, startOffset);
+            }
+            return [toChunk(text, startOffset, tokenCount)];
+          }
+          const rule = rules[level];
+          if (rule === undefined) {
+            const tokenCount = yield* tokenizer.countTokens(text);
+            if (tokenCount > chunkSize) {
+              return yield* tokenFallback(text, startOffset);
+            }
+            return [toChunk(text, startOffset, tokenCount)];
+          }
+          if (!rule.delimiters && !rule.whitespace) {
+            return yield* tokenFallback(text, startOffset);
+          }
+          const splits = splitByRule(text, rule, minCharactersPerChunk);
+          if (splits.length === 0) return [];
+          const tokenCounts = yield* Effect.forEach(splits, (split) =>
+            tokenizer.countTokens(split),
+          );
+          const { mergedSplits, mergedTokenCounts } = mergeSplits(
+            splits,
+            tokenCounts,
+            chunkSize,
+          );
+          const out: Array<Chunk> = [];
+          let currentOffset = startOffset;
+          for (let i = 0; i < mergedSplits.length; i++) {
+            const split = mergedSplits[i] ?? "";
+            const tokenCount = mergedTokenCounts[i] ?? 0;
+            if (tokenCount > chunkSize) {
+              const nested = yield* recursiveChunk(
+                split,
+                level + 1,
+                currentOffset,
+              );
+              out.push(...nested);
+            } else {
+              out.push(toChunk(split, currentOffset, tokenCount));
+            }
+            currentOffset += split.length;
+          }
+          return out;
+        });
+
+      const chunk = Effect.fn("RecursiveChunker.chunk")(function* (
+        text: string,
+      ) {
+        if (text.trim().length === 0) return [];
+        return yield* recursiveChunk(text, 0, 0);
+      });
+      return {
+        name: "recursive",
+        chunk,
+      };
+    }),
+  },
+) {}
+
+export const RecursiveChunkerLive = Layer.effect(Chunker)(
+  RecursiveChunker.make,
+).pipe(Layer.provide(WordTokenizerLive));
