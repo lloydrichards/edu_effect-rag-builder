@@ -7,6 +7,7 @@ import {
 } from "@repo/domain/Chunk";
 import { Effect, Layer, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
+import { isBlank } from "./util";
 
 type TableChunkerMode = "row" | "token";
 type TableFormat = "markdown" | "html" | "auto";
@@ -297,7 +298,7 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
         });
 
       const chunk = Effect.fn(function* (input: string) {
-        if (input.trim().length === 0) return [];
+        if (isBlank(input)) return [];
         const format = detectFormat(input, config.format);
         const parsed =
           format === "markdown"

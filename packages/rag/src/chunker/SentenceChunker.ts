@@ -1,6 +1,14 @@
 import { type Chunk, ChunkError, Chunker, Tokenizer } from "@repo/domain/Chunk";
-import { Array, Effect, Layer, pipe, ServiceMap, String } from "effect";
+import { Effect, Layer, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
+import {
+  buildDelimiterPattern,
+  findDelimiterSpans,
+  type IncludeDelim,
+  isBlank,
+  splitTextByMatches,
+  type TextSpan,
+} from "./util";
 
 export const SentenceChunkerConfig = ServiceMap.Reference<{
   chunkSize: number;
@@ -16,14 +24,6 @@ export const SentenceChunkerConfig = ServiceMap.Reference<{
   }),
 });
 
-type SentenceSpan = Omit<Chunk, "tokenCount">;
-
-const sliceSpan = (
-  text: string,
-  startIdx: number,
-  endIdx: number,
-): SentenceSpan => ({ text: text.slice(startIdx, endIdx), startIdx, endIdx });
-
 const validateConfig = (config: {
   chunkSize: number;
   chunkOverlap: number;
@@ -35,97 +35,25 @@ const validateConfig = (config: {
   config.delimiters.length > 0 &&
   config.delimiters.every((delimiter) => delimiter.length > 0);
 
-const toDelimiterPattern = (delimiters: ReadonlyArray<string>): RegExp => {
-  const alternatives = delimiters
-    .slice()
-    .sort((a, b) => b.length - a.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  return new RegExp(alternatives, "g");
-};
-
-const findDelimiterMatches = (
-  text: string,
-  delimiters: ReadonlyArray<string>,
-) =>
-  pipe(
-    text,
-    String.matchAll(toDelimiterPattern(delimiters)),
-    Array.fromIterable,
-    Array.reduce<SentenceSpan[], RegExpMatchArray>([], (acc, match) => {
-      const delimiter = match[0];
-      const startIdx = match.index;
-
-      if (delimiter === undefined || startIdx === undefined) {
-        return acc;
-      }
-
-      return Array.append(acc, {
-        text: delimiter,
-        startIdx,
-        endIdx: startIdx + delimiter.length,
-      });
-    }),
-  );
-
 const splitSentences = (
   text: string,
   delimiters: ReadonlyArray<string>,
-  includeDelim: "prev" | "next" | null,
-) => {
+  includeDelim: IncludeDelim,
+): Array<TextSpan> => {
   if (delimiters.length === 0) {
     return text.length === 0
       ? []
       : [{ text, startIdx: 0, endIdx: text.length }];
   }
 
-  const delimiterMatches = findDelimiterMatches(text, delimiters);
+  const pattern = buildDelimiterPattern(delimiters);
+  const delimiterMatches = findDelimiterSpans(text, pattern);
+
   if (delimiterMatches.length === 0) {
     return [{ text, startIdx: 0, endIdx: text.length }];
   }
 
-  const units: Array<SentenceSpan> = [];
-
-  if (includeDelim === "prev") {
-    let cursor = 0;
-    for (const delimiter of delimiterMatches) {
-      units.push(sliceSpan(text, cursor, delimiter.endIdx));
-      cursor = delimiter.endIdx;
-    }
-    if (cursor < text.length) {
-      units.push(sliceSpan(text, cursor, text.length));
-    }
-  } else if (includeDelim === "next") {
-    const firstDelimiter = delimiterMatches[0];
-    if (firstDelimiter !== undefined) {
-      units.push(sliceSpan(text, 0, firstDelimiter.startIdx));
-    }
-
-    for (let index = 0; index < delimiterMatches.length; index++) {
-      const current = delimiterMatches[index];
-      if (current === undefined) {
-        continue;
-      }
-
-      const next = delimiterMatches[index + 1];
-      const endIdx = next?.startIdx ?? text.length;
-      units.push(sliceSpan(text, current.startIdx, endIdx));
-    }
-  } else {
-    let cursor = 0;
-    for (const delimiter of delimiterMatches) {
-      units.push(sliceSpan(text, cursor, delimiter.startIdx));
-      cursor = delimiter.endIdx;
-    }
-    if (cursor <= text.length) {
-      units.push(sliceSpan(text, cursor, text.length));
-    }
-  }
-
-  return pipe(
-    units,
-    Array.filter((unit) => unit.text.length > 0),
-  );
+  return splitTextByMatches(text, delimiterMatches, includeDelim);
 };
 
 const windowFrom = (
@@ -243,7 +171,7 @@ export class SentenceChunker extends ServiceMap.Service<Chunker>()(
       const chunk = Effect.fn("SentenceChunker.chunk")(function* (
         text: string,
       ) {
-        if (String.isEmpty(String.trim(text))) {
+        if (isBlank(text)) {
           return [];
         }
 

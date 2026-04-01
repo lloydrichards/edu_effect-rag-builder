@@ -1,5 +1,6 @@
 import { type Chunk, ChunkError, Chunker } from "@repo/domain/Chunk";
 import { Effect, Layer, ServiceMap } from "effect";
+import { isBlank } from "./util";
 
 export const FastChunkerConfig = ServiceMap.Reference("FastChunkerConfig", {
   defaultValue: () => ({
@@ -84,7 +85,7 @@ export class FastChunker extends ServiceMap.Service<Chunker>()("FastChunker", {
         );
       }
 
-      if (text.trim().length === 0) {
+      if (isBlank(text)) {
         return [];
       }
       const bytes = encoder.encode(text);

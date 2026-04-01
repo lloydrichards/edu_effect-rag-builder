@@ -1,6 +1,7 @@
 import { type Chunk, ChunkError, Chunker, Tokenizer } from "@repo/domain/Chunk";
 import { Effect, Layer, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
+import { isBlank } from "./util";
 
 export const TokenChunkerConfig = ServiceMap.Reference("TokenChunkerConfig", {
   defaultValue: () => ({
@@ -23,7 +24,7 @@ export class TokenChunker extends ServiceMap.Service<Chunker>()(
         );
       }
       const chunk = Effect.fn("TokenChunker.chunk")(function* (text: string) {
-        if (text.trim().length === 0) {
+        if (isBlank(text)) {
           return [];
         }
         const tokens = yield* tokenizer.encode(text);
