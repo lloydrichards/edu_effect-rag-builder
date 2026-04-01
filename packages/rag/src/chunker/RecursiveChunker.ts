@@ -191,11 +191,13 @@ const toChunk = (
   text: string,
   startIdx: number,
   tokenCount: number,
+  metadata?: Record<string, unknown>,
 ): Chunk => ({
   text,
   startIdx,
   endIdx: startIdx + text.length,
   tokenCount,
+  ...(metadata ? { metadata } : {}),
 });
 
 export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
@@ -225,7 +227,12 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
         for (let i = 0; i < encoded.length; i += chunkSize) {
           const group = encoded.slice(i, i + chunkSize);
           const chunkText = yield* tokenizer.decode(group);
-          chunks.push(toChunk(chunkText, currentOffset, group.length));
+          chunks.push(
+            toChunk(chunkText, currentOffset, group.length, {
+              recursiveRuleLevel: -1,
+              recursiveRuleType: "tokenFallback",
+            }),
+          );
           currentOffset += chunkText.length;
         }
         return chunks;
@@ -247,7 +254,12 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
             if (tokenCount > chunkSize) {
               return yield* tokenFallback(text, startOffset);
             }
-            return [toChunk(text, startOffset, tokenCount)];
+            return [
+              toChunk(text, startOffset, tokenCount, {
+                recursiveRuleLevel: -1,
+                recursiveRuleType: "endOfRules",
+              }),
+            ];
           }
           const rule = rules[level];
           if (rule === undefined) {
@@ -255,7 +267,12 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
             if (tokenCount > chunkSize) {
               return yield* tokenFallback(text, startOffset);
             }
-            return [toChunk(text, startOffset, tokenCount)];
+            return [
+              toChunk(text, startOffset, tokenCount, {
+                recursiveRuleLevel: -1,
+                recursiveRuleType: "missingRule",
+              }),
+            ];
           }
           if (!rule.delimiters && !rule.whitespace) {
             return yield* tokenFallback(text, startOffset);
@@ -270,6 +287,12 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
             tokenCounts,
             chunkSize,
           );
+          const ruleType = rule.delimiters
+            ? "delimiter"
+            : rule.whitespace
+              ? "whitespace"
+              : "fallback";
+          const ruleDelims = rule.delimiters?.join("|");
           const out: Array<Chunk> = [];
           let currentOffset = startOffset;
           for (let i = 0; i < mergedSplits.length; i++) {
@@ -283,7 +306,13 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
               );
               out.push(...nested);
             } else {
-              out.push(toChunk(split, currentOffset, tokenCount));
+              out.push(
+                toChunk(split, currentOffset, tokenCount, {
+                  recursiveRuleLevel: level,
+                  recursiveRuleType: ruleType,
+                  ...(ruleDelims ? { recursiveDelimiter: ruleDelims } : {}),
+                }),
+              );
             }
             currentOffset += split.length;
           }
