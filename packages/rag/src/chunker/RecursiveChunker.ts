@@ -7,11 +7,18 @@ import {
 } from "@repo/domain/Chunk";
 import { Effect, Layer, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
+import {
+  buildDelimiterPattern,
+  findDelimiterSpans,
+  type IncludeDelim,
+  isBlank,
+  splitTextByMatches,
+} from "./util";
 
 export type RecursiveRule = {
   delimiters?: ReadonlyArray<string>;
   whitespace?: boolean;
-  includeDelim?: "prev" | "next" | null;
+  includeDelim?: IncludeDelim;
 };
 
 type RecursiveChunkerConfig = {
@@ -49,68 +56,6 @@ const isValidConfig = (config: RecursiveChunkerConfig): boolean =>
   config.rules.length > 0 &&
   config.rules.every(isValidRule);
 
-type Span = { startIdx: number; endIdx: number };
-
-const toDelimiterPattern = (delimiters: ReadonlyArray<string>): RegExp => {
-  const alternatives = delimiters
-    .slice()
-    .sort((a, b) => b.length - a.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  return new RegExp(alternatives, "g");
-};
-
-const findMatches = (text: string, pattern: RegExp): Array<Span> =>
-  Array.from(text.matchAll(pattern)).flatMap((match) => {
-    const raw = match[0];
-    const startIdx = match.index;
-    if (raw === undefined || startIdx === undefined) return [];
-    return [{ startIdx, endIdx: startIdx + raw.length }];
-  });
-
-const splitWithMatches = (
-  text: string,
-  matches: ReadonlyArray<Span>,
-  includeDelim: "prev" | "next" | null,
-): Array<string> => {
-  if (matches.length === 0) return text.length === 0 ? [] : [text];
-  const parts: Array<string> = [];
-  switch (includeDelim) {
-    case "prev": {
-      let cursor = 0;
-      for (const match of matches) {
-        parts.push(text.slice(cursor, match.endIdx));
-        cursor = match.endIdx;
-      }
-      if (cursor < text.length) parts.push(text.slice(cursor));
-      break;
-    }
-    case "next": {
-      const first = matches[0];
-      if (first !== undefined) {
-        parts.push(text.slice(0, first.startIdx));
-      }
-      for (let i = 0; i < matches.length; i++) {
-        const current = matches[i];
-        if (current === undefined) continue;
-        const next = matches[i + 1];
-        const end = next?.startIdx ?? text.length;
-        parts.push(text.slice(current.startIdx, end));
-      }
-      break;
-    }
-    default: {
-      let cursor = 0;
-      for (const match of matches) {
-        parts.push(text.slice(cursor, match.startIdx));
-        cursor = match.endIdx;
-      }
-      if (cursor <= text.length) parts.push(text.slice(cursor));
-    }
-  }
-  return parts.filter((part) => part.length > 0);
-};
-
 const enforceMinCharacters = (
   parts: ReadonlyArray<string>,
   minCharactersPerChunk: number,
@@ -139,14 +84,18 @@ const splitByRule = (
   if (text.length === 0) return [];
   const includeDelim = rule.includeDelim ?? "prev";
   if (rule.delimiters && rule.delimiters.length > 0) {
-    const pattern = toDelimiterPattern(rule.delimiters);
-    const matches = findMatches(text, pattern);
-    const parts = splitWithMatches(text, matches, includeDelim);
+    const pattern = buildDelimiterPattern(rule.delimiters);
+    const matches = findDelimiterSpans(text, pattern);
+    const parts = splitTextByMatches(text, matches, includeDelim).map(
+      (part) => part.text,
+    );
     return enforceMinCharacters(parts, minCharactersPerChunk);
   }
   if (rule.whitespace) {
-    const matches = findMatches(text, /\s+/g);
-    const parts = splitWithMatches(text, matches, includeDelim);
+    const matches = findDelimiterSpans(text, /\s+/g);
+    const parts = splitTextByMatches(text, matches, includeDelim).map(
+      (part) => part.text,
+    );
     return enforceMinCharacters(parts, minCharactersPerChunk);
   }
   // fallback level: no split here; recursion will use token fallback later
@@ -322,7 +271,7 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
       const chunk = Effect.fn("RecursiveChunker.chunk")(function* (
         text: string,
       ) {
-        if (text.trim().length === 0) return [];
+        if (isBlank(text)) return [];
         return yield* recursiveChunk(text, 0, 0);
       });
       return {
