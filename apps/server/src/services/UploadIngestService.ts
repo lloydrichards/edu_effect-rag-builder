@@ -128,6 +128,7 @@ export class UploadIngestService extends ServiceMap.Service<UploadIngestService>
             id: `${fileId}-${index}`,
             document: chunk.text,
             metadata: {
+              ...(chunk.metadata ?? {}),
               fileId,
               fileName,
               mimeType,

@@ -1,4 +1,4 @@
-import type { ChunkError, TokenizerError } from "@repo/domain/Chunk";
+import type { Chunk, ChunkError, TokenizerError } from "@repo/domain/Chunk";
 import {
   Array,
   Effect,
@@ -25,6 +25,7 @@ type ChunkEntry = {
   text: string;
   pageNumber?: number;
   pageCount?: number;
+  metadata?: Record<string, unknown> | undefined;
 };
 
 type MarkdownSegment = {
@@ -53,41 +54,45 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         );
 
       const toChunkEntries = (
-        texts: ReadonlyArray<string>,
+        chunks: ReadonlyArray<Chunk>,
         metadata?: { pageNumber?: number; pageCount?: number },
+        baseMetadata?: Record<string, unknown>,
       ): Array<ChunkEntry> =>
         pipe(
-          texts,
-          Array.map((value) => String.trim(value)),
-          Array.filter(String.isNonEmpty),
-          Array.map((text) => ({ text, ...metadata })),
+          chunks,
+          Array.map((chunk) => ({
+            ...chunk,
+            text: String.trim(chunk.text),
+          })),
+          Array.filter((chunk) => String.isNonEmpty(chunk.text)),
+          Array.map((chunk) => ({
+            text: chunk.text,
+            ...metadata,
+            metadata: {
+              ...(baseMetadata ?? {}),
+              chunkCharStart: chunk.startIdx,
+              chunkCharEnd: chunk.endIdx,
+              chunkTokenCount: chunk.tokenCount,
+              ...(chunk.metadata ?? {}),
+            },
+          })),
         );
 
       const chunkWithStrategy = (
         strategy: ChunkStrategy,
         text: string,
-      ): Effect.Effect<Array<string>, ChunkError | TokenizerError> => {
+      ): Effect.Effect<Array<Chunk>, ChunkError | TokenizerError> => {
         switch (strategy) {
           case "fast":
-            return Effect.map(fastChunker.chunk(text), (chunks) =>
-              chunks.map((chunk) => chunk.text),
-            );
+            return fastChunker.chunk(text);
           case "sentence":
-            return Effect.map(sentenceChunker.chunk(text), (chunks) =>
-              chunks.map((chunk) => chunk.text),
-            );
+            return sentenceChunker.chunk(text);
           case "token":
-            return Effect.map(tokenChunker.chunk(text), (chunks) =>
-              chunks.map((chunk) => chunk.text),
-            );
+            return tokenChunker.chunk(text);
           case "recursive":
-            return Effect.map(recursiveChunker.chunk(text), (chunks) =>
-              chunks.map((chunk) => chunk.text),
-            );
+            return recursiveChunker.chunk(text);
           case "table":
-            return Effect.map(tableChunker.chunk(text), (chunks) =>
-              chunks.map((chunk) => chunk.text),
-            );
+            return tableChunker.chunk(text);
         }
       };
 
@@ -181,12 +186,15 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
           const segments = splitMarkdownSegments(normalizedText);
           const allEntries = yield* Effect.forEach(segments, (segment) =>
             segment.kind === "table"
-              ? Effect.map(chunkWithStrategy("table", segment.text), (texts) =>
-                  toChunkEntries(texts),
+              ? Effect.map(chunkWithStrategy("table", segment.text), (chunks) =>
+                  toChunkEntries(chunks, undefined, { chunkStrategy: "table" }),
                 )
               : Effect.map(
                   chunkWithStrategy("recursive", segment.text),
-                  (texts) => toChunkEntries(texts),
+                  (chunks) =>
+                    toChunkEntries(chunks, undefined, {
+                      chunkStrategy: "recursive",
+                    }),
                 ),
           );
 
@@ -202,8 +210,12 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
           Option.match({
             onNone: () => Effect.succeed([] as Array<ChunkEntry>),
             onSome: (strategy) =>
-              Effect.map(chunkWithStrategy(strategy, normalizedText), (texts) =>
-                toChunkEntries(texts),
+              Effect.map(
+                chunkWithStrategy(strategy, normalizedText),
+                (chunks) =>
+                  toChunkEntries(chunks, undefined, {
+                    chunkStrategy: strategy,
+                  }),
               ),
           }),
         );
@@ -230,24 +242,49 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         ).pipe(Effect.map((pagesWithChunks) => pagesWithChunks.flat()));
       };
 
-      const chunkText = (
+      const chunkText = Effect.fn(function* (
         fileName: string,
         text: string,
         pages?: Array<string>,
-      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> => {
-        const extension = getFileExtension(fileName);
-        switch (extension) {
-          case ".pdf":
-            return chunkPdfPages(pages ?? [], text);
-          case ".csv":
-          case ".txt":
-            return chunkNormalizedText(extension, normalizeWhitespace(text));
-          case ".md":
-            return chunkMarkdownText(normalizeWhitespace(text));
-          default:
-            return Effect.succeed([] as Array<ChunkEntry>);
-        }
-      };
+      ) {
+        return yield* Effect.gen(function* () {
+          const extension = getFileExtension(fileName);
+          switch (extension) {
+            case ".pdf":
+              return yield* chunkPdfPages(pages ?? [], text);
+            case ".csv":
+            case ".txt":
+              return yield* chunkNormalizedText(
+                extension,
+                normalizeWhitespace(text),
+              );
+            case ".md":
+              return yield* chunkMarkdownText(normalizeWhitespace(text));
+            default:
+              return yield* Effect.succeed([] as Array<ChunkEntry>);
+          }
+        }).pipe(
+          Effect.map((rawChunks) =>
+            rawChunks.map((chunk, index) => ({
+              ...chunk,
+              metadata: {
+                sourceFile: fileName,
+                fileExt: getFileExtension(fileName),
+                mimeType: resolveMimeTypeForFile(fileName),
+                chunkIndex: index,
+                chunkCount: rawChunks.length,
+                ...(chunk.metadata ?? {}),
+                ...(chunk.pageNumber !== undefined
+                  ? { pageNumber: chunk.pageNumber }
+                  : {}),
+                ...(chunk.pageCount !== undefined
+                  ? { pageCount: chunk.pageCount }
+                  : {}),
+              },
+            })),
+          ),
+        );
+      });
 
       const getFileExtension = (fileName: string) =>
         pipe(fileName, String.split("."), (parts) =>

@@ -15,10 +15,12 @@ type RowSlice = {
   text: string;
   startIdx: number;
   endIdx: number;
+  rowIndex: number;
 };
 
 type ParsedTable = {
   header: string;
+  headerColumns: string[];
   rows: RowSlice[];
   footer: string;
 };
@@ -70,12 +72,22 @@ const splitMarkdownTable = (input: string): ParsedTable | null => {
   const dataRows = lines.slice(2).filter((line) => line.text.trim().length > 0);
   if (dataRows.length === 0) return null;
 
+  const headerColumns = headerLine.text
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
   return {
     header: `${headerLine.text}${separatorLine.text}`,
-    rows: dataRows.map(({ text, startIdx, endIdx }) => ({
+    headerColumns,
+    rows: dataRows.map(({ text, startIdx, endIdx }, rowIndex) => ({
       text,
       startIdx,
       endIdx,
+      rowIndex,
     })),
     footer: "",
   };
@@ -92,16 +104,33 @@ const chunkRowsBySize = (
   return groups;
 };
 
-const toRowModeChunk = (table: ParsedTable): Chunk | null => {
+const toRowModeChunk = (
+  table: ParsedTable,
+  format: Exclude<TableFormat, "auto">,
+  mode: TableChunkerMode,
+): Chunk | null => {
   const first = table.rows.at(0);
   const last = table.rows.at(-1);
   if (!first || !last) return null;
+  const tableHasHeader = table.header.trim().length > 0;
 
   return {
     text: `${table.header}${table.rows.map((r) => r.text).join("")}${table.footer}`,
     startIdx: first.startIdx,
     endIdx: last.endIdx,
     tokenCount: table.rows.length,
+    metadata: {
+      isTable: true,
+      tableFormat: format,
+      tableMode: mode,
+      tableRowStart: first.rowIndex,
+      tableRowEnd: last.rowIndex,
+      tableRowCount: table.rows.length,
+      tableHasHeader,
+      ...(table.headerColumns.length > 0
+        ? { tableColumns: table.headerColumns }
+        : {}),
+    },
   };
 };
 
@@ -113,6 +142,7 @@ const findHtmlRowsInRange = (
   const rows: RowSlice[] = [];
   const lower = input.toLowerCase();
   let cursor = startIdx;
+  let rowIndex = 0;
 
   while (cursor < endIdx) {
     const trStart = lower.indexOf("<tr", cursor);
@@ -131,7 +161,9 @@ const findHtmlRowsInRange = (
       text: input.slice(trStart, trEnd),
       startIdx: trStart,
       endIdx: trEnd,
+      rowIndex,
     });
+    rowIndex += 1;
     cursor = trEnd;
   }
 
@@ -160,6 +192,7 @@ const splitHtmlTable = (input: string): ParsedTable | null => {
   if (!first || !last) return null;
   return {
     header: input.slice(0, first.startIdx),
+    headerColumns: [],
     rows,
     footer: input.slice(last.endIdx),
   };
@@ -201,6 +234,7 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
       const toTokenModeChunks = (
         table: ParsedTable,
         chunkSize: number,
+        format: Exclude<TableFormat, "auto">,
       ): Effect.Effect<Array<Chunk>, TokenizerError> =>
         Effect.gen(function* () {
           const header = yield* tokenizer.countTokens(table.header);
@@ -219,6 +253,7 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
             const first = currentRows[0];
             const last = currentRows[currentRows.length - 1];
             if (!first || !last) return;
+            const tableHasHeader = table.header.trim().length > 0;
             const chunkText =
               table.header +
               currentRows.map((row) => row.text).join("") +
@@ -228,6 +263,18 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
               startIdx: first.startIdx,
               endIdx: last.endIdx,
               tokenCount: baseTokens + currentTokens,
+              metadata: {
+                isTable: true,
+                tableFormat: format,
+                tableMode: config.mode,
+                tableRowStart: first.rowIndex,
+                tableRowEnd: last.rowIndex,
+                tableRowCount: currentRows.length,
+                tableHasHeader,
+                ...(table.headerColumns.length > 0
+                  ? { tableColumns: table.headerColumns }
+                  : {}),
+              },
             });
             currentRows = [];
             currentTokens = 0;
@@ -266,16 +313,25 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
                   config.chunkSize,
                 );
                 return rowGroups.flatMap((rows) => {
-                  const built = toRowModeChunk({
-                    header: parsed.header,
-                    rows,
-                    footer: parsed.footer,
-                  });
+                  const built = toRowModeChunk(
+                    {
+                      header: parsed.header,
+                      headerColumns: parsed.headerColumns,
+                      rows,
+                      footer: parsed.footer,
+                    },
+                    format,
+                    config.mode,
+                  );
                   return built ? [built] : [];
                 });
               }
               case "token": {
-                return yield* toTokenModeChunks(parsed, config.chunkSize);
+                return yield* toTokenModeChunks(
+                  parsed,
+                  config.chunkSize,
+                  format,
+                );
               }
             }
             break;
@@ -289,16 +345,25 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
                   config.chunkSize,
                 );
                 return rowGroups.flatMap((r) => {
-                  const build = toRowModeChunk({
-                    header: parsed.header,
-                    rows: r,
-                    footer: parsed.footer,
-                  });
+                  const build = toRowModeChunk(
+                    {
+                      header: parsed.header,
+                      headerColumns: parsed.headerColumns,
+                      rows: r,
+                      footer: parsed.footer,
+                    },
+                    format,
+                    config.mode,
+                  );
                   return build ? [build] : [];
                 });
               }
               case "token": {
-                return yield* toTokenModeChunks(parsed, config.chunkSize);
+                return yield* toTokenModeChunks(
+                  parsed,
+                  config.chunkSize,
+                  format,
+                );
               }
             }
           }
