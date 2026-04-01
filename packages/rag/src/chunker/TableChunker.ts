@@ -1,16 +1,12 @@
 import {
   type Chunk,
-  ChunkError,
   Chunker,
   Tokenizer,
   type TokenizerError,
 } from "@repo/domain/Chunk";
-import { Effect, Layer, ServiceMap } from "effect";
+import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
 import { isBlank } from "./util";
-
-type TableChunkerMode = "row" | "token";
-type TableFormat = "markdown" | "html" | "auto";
 
 type RowSlice = {
   text: string;
@@ -34,8 +30,8 @@ type LineSlice = {
 
 const detectFormat = (
   input: string,
-  format: TableFormat,
-): Exclude<TableFormat, "auto"> => {
+  format: typeof TableFormat.Type,
+): Exclude<typeof TableFormat.Type, "auto"> => {
   if (format !== "auto") return format;
   return input.toLowerCase().includes("<table") ? "html" : "markdown";
 };
@@ -107,8 +103,8 @@ const chunkRowsBySize = (
 
 const toRowModeChunk = (
   table: ParsedTable,
-  format: Exclude<TableFormat, "auto">,
-  mode: TableChunkerMode,
+  format: Exclude<typeof TableFormat.Type, "auto">,
+  mode: typeof TableChunkerMode.Type,
 ): Chunk | null => {
   const first = table.rows.at(0);
   const last = table.rows.at(-1);
@@ -198,12 +194,16 @@ const splitHtmlTable = (input: string): ParsedTable | null => {
     footer: input.slice(last.endIdx),
   };
 };
+const TableChunkerMode = Schema.Literals(["row", "token"]);
+const TableFormat = Schema.Literals(["markdown", "html", "auto"]);
 
-export type TableChunkerConfig = {
-  chunkSize: number;
-  mode: TableChunkerMode;
-  format: TableFormat;
-};
+const TableChunkerConfigSchema = Schema.Struct({
+  chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
+  mode: TableChunkerMode,
+  format: TableFormat,
+});
+
+export type TableChunkerConfig = typeof TableChunkerConfigSchema.Type;
 
 export const TableChunkerConfig = ServiceMap.Reference<TableChunkerConfig>(
   "TableChunkerConfig",
@@ -216,26 +216,20 @@ export const TableChunkerConfig = ServiceMap.Reference<TableChunkerConfig>(
   },
 );
 
-const isValidConfig = (config: TableChunkerConfig): boolean =>
-  config.chunkSize > 0;
-
 export class TableChunker extends ServiceMap.Service<Chunker>()(
   "TableChunker",
   {
     make: Effect.gen(function* () {
       const tokenizer = yield* Tokenizer;
       const config = yield* TableChunkerConfig;
-
-      if (!isValidConfig(config)) {
-        return yield* Effect.fail(
-          new ChunkError({ message: "Invalid table chunker config" }),
-        );
-      }
+      const { chunkSize, format, mode } = yield* Schema.decodeEffect(
+        TableChunkerConfigSchema,
+      )(config);
 
       const toTokenModeChunks = (
         table: ParsedTable,
         chunkSize: number,
-        format: Exclude<TableFormat, "auto">,
+        format: Exclude<typeof TableFormat.Type, "auto">,
       ): Effect.Effect<Array<Chunk>, TokenizerError> =>
         Effect.gen(function* () {
           const header = yield* tokenizer.countTokens(table.header);
@@ -267,7 +261,7 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
               metadata: {
                 isTable: true,
                 tableFormat: format,
-                tableMode: config.mode,
+                tableMode: mode,
                 tableRowStart: first.rowIndex,
                 tableRowEnd: last.rowIndex,
                 tableRowCount: currentRows.length,
@@ -299,20 +293,17 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
 
       const chunk = Effect.fn(function* (input: string) {
         if (isBlank(input)) return [];
-        const format = detectFormat(input, config.format);
+        const narrowFormat = detectFormat(input, format);
         const parsed =
-          format === "markdown"
+          narrowFormat === "markdown"
             ? splitMarkdownTable(input)
             : splitHtmlTable(input);
-        switch (format) {
+        switch (narrowFormat) {
           case "html": {
             if (!parsed) return [];
-            switch (config.mode) {
+            switch (mode) {
               case "row": {
-                const rowGroups = chunkRowsBySize(
-                  parsed.rows,
-                  config.chunkSize,
-                );
+                const rowGroups = chunkRowsBySize(parsed.rows, chunkSize);
                 return rowGroups.flatMap((rows) => {
                   const built = toRowModeChunk(
                     {
@@ -321,8 +312,8 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
                       rows,
                       footer: parsed.footer,
                     },
-                    format,
-                    config.mode,
+                    narrowFormat,
+                    mode,
                   );
                   return built ? [built] : [];
                 });
@@ -330,8 +321,8 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
               case "token": {
                 return yield* toTokenModeChunks(
                   parsed,
-                  config.chunkSize,
-                  format,
+                  chunkSize,
+                  narrowFormat,
                 );
               }
             }
@@ -339,12 +330,9 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
           }
           case "markdown": {
             if (!parsed) return [];
-            switch (config.mode) {
+            switch (mode) {
               case "row": {
-                const rowGroups = chunkRowsBySize(
-                  parsed.rows,
-                  config.chunkSize,
-                );
+                const rowGroups = chunkRowsBySize(parsed.rows, chunkSize);
                 return rowGroups.flatMap((r) => {
                   const build = toRowModeChunk(
                     {
@@ -353,8 +341,8 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
                       rows: r,
                       footer: parsed.footer,
                     },
-                    format,
-                    config.mode,
+                    narrowFormat,
+                    mode,
                   );
                   return build ? [build] : [];
                 });
@@ -362,8 +350,8 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
               case "token": {
                 return yield* toTokenModeChunks(
                   parsed,
-                  config.chunkSize,
-                  format,
+                  chunkSize,
+                  narrowFormat,
                 );
               }
             }

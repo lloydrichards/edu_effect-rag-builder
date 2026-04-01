@@ -1,21 +1,32 @@
-import { type Chunk, ChunkError, Chunker, Tokenizer } from "@repo/domain/Chunk";
-import { Effect, Layer, ServiceMap } from "effect";
+import { type Chunk, Chunker, Tokenizer } from "@repo/domain/Chunk";
+import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
 import {
   buildDelimiterPattern,
   findDelimiterSpans,
-  type IncludeDelim,
+  IncludeDelim,
   isBlank,
   splitTextByMatches,
   type TextSpan,
 } from "./util";
 
-export const SentenceChunkerConfig = ServiceMap.Reference<{
-  chunkSize: number;
-  chunkOverlap: number;
-  delimiters: string[];
-  includeDelim: "prev" | "next" | null;
-}>("SentenceChunkerConfig", {
+const SentenceChunkerConfigSchema = Schema.Struct({
+  chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
+  chunkOverlap: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+  delimiters: Schema.NonEmptyArray(Schema.String),
+  includeDelim: IncludeDelim,
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      ({ chunkOverlap, chunkSize }) =>
+        chunkOverlap < chunkSize || "chunkOverlap must be less than chunkSize",
+    ),
+  ),
+);
+
+export const SentenceChunkerConfig = ServiceMap.Reference<
+  typeof SentenceChunkerConfigSchema.Type
+>("SentenceChunkerConfig", {
   defaultValue: () => ({
     chunkSize: 2048,
     chunkOverlap: 0,
@@ -23,17 +34,6 @@ export const SentenceChunkerConfig = ServiceMap.Reference<{
     includeDelim: "prev",
   }),
 });
-
-const validateConfig = (config: {
-  chunkSize: number;
-  chunkOverlap: number;
-  delimiters: string[];
-}) =>
-  config.chunkSize > 0 &&
-  config.chunkOverlap >= 0 &&
-  config.chunkOverlap < config.chunkSize &&
-  config.delimiters.length > 0 &&
-  config.delimiters.every((delimiter) => delimiter.length > 0);
 
 const splitSentences = (
   text: string,
@@ -152,22 +152,11 @@ export class SentenceChunker extends ServiceMap.Service<Chunker>()(
   {
     make: Effect.gen(function* () {
       const tokenizer = yield* Tokenizer;
-      const { chunkSize, chunkOverlap, delimiters, includeDelim } =
-        yield* SentenceChunkerConfig;
+      const config = yield* SentenceChunkerConfig;
 
-      if (
-        !validateConfig({
-          chunkSize,
-          chunkOverlap,
-          delimiters,
-        })
-      ) {
-        return yield* Effect.fail(
-          new ChunkError({
-            message: "Invalid sentence chunker config",
-          }),
-        );
-      }
+      const { chunkSize, chunkOverlap, delimiters, includeDelim } =
+        yield* Schema.decodeEffect(SentenceChunkerConfigSchema)(config);
+
       const chunk = Effect.fn("SentenceChunker.chunk")(function* (
         text: string,
       ) {
