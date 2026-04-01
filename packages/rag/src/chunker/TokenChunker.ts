@@ -1,9 +1,23 @@
-import { type Chunk, ChunkError, Chunker, Tokenizer } from "@repo/domain/Chunk";
-import { Effect, Layer, ServiceMap } from "effect";
+import { type Chunk, Chunker, Tokenizer } from "@repo/domain/Chunk";
+import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
 import { isBlank } from "./util";
 
-export const TokenChunkerConfig = ServiceMap.Reference("TokenChunkerConfig", {
+const TokenChunkerConfigSchema = Schema.Struct({
+  chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
+  chunkOverlap: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      ({ chunkOverlap, chunkSize }) =>
+        chunkOverlap < chunkSize || "chunkOverlap must be less than chunkSize",
+    ),
+  ),
+);
+
+export const TokenChunkerConfig = ServiceMap.Reference<
+  typeof TokenChunkerConfigSchema.Type
+>("TokenChunkerConfig", {
   defaultValue: () => ({
     chunkSize: 2048,
     chunkOverlap: 0,
@@ -15,14 +29,10 @@ export class TokenChunker extends ServiceMap.Service<Chunker>()(
   {
     make: Effect.gen(function* () {
       const tokenizer = yield* Tokenizer;
-      const { chunkSize, chunkOverlap } = yield* TokenChunkerConfig;
-      if (chunkSize <= 0 || chunkOverlap < 0 || chunkOverlap >= chunkSize) {
-        return yield* Effect.fail(
-          new ChunkError({
-            message: "Invalid token chunker config",
-          }),
-        );
-      }
+      const config = yield* TokenChunkerConfig;
+      const { chunkSize, chunkOverlap } = yield* Schema.decodeEffect(
+        TokenChunkerConfigSchema,
+      )(config);
       const chunk = Effect.fn("TokenChunker.chunk")(function* (text: string) {
         if (isBlank(text)) {
           return [];

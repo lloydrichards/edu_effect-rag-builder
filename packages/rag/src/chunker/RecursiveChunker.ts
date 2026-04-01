@@ -1,60 +1,58 @@
 import {
   type Chunk,
-  ChunkError,
+  type ChunkError,
   Chunker,
   Tokenizer,
   type TokenizerError,
 } from "@repo/domain/Chunk";
-import { Effect, Layer, ServiceMap } from "effect";
+import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
 import {
   buildDelimiterPattern,
   findDelimiterSpans,
-  type IncludeDelim,
+  IncludeDelim,
   isBlank,
   splitTextByMatches,
 } from "./util";
 
-export type RecursiveRule = {
-  delimiters?: ReadonlyArray<string>;
-  whitespace?: boolean;
-  includeDelim?: IncludeDelim;
-};
+const RecursiveRuleSchema = Schema.Struct({
+  delimiters: Schema.optional(Schema.NonEmptyArray(Schema.String)),
+  whitespace: Schema.optional(Schema.Boolean),
+  includeDelim: Schema.optional(IncludeDelim),
+}).pipe(
+  Schema.check(
+    Schema.makeFilter(
+      ({ delimiters, whitespace }) =>
+        (delimiters && delimiters.length > 0) ||
+        whitespace === true ||
+        (!delimiters && !whitespace) ||
+        "Rule must define delimiters, whitespace, or be an empty fallback",
+    ),
+  ),
+);
 
-type RecursiveChunkerConfig = {
-  chunkSize: number;
-  minCharactersPerChunk: number;
-  rules: ReadonlyArray<RecursiveRule>;
-};
+export type RecursiveRule = typeof RecursiveRuleSchema.Type;
 
-export const RecursiveChunkerConfig =
-  ServiceMap.Reference<RecursiveChunkerConfig>("RecursiveChunkerConfig", {
-    defaultValue: () => ({
-      chunkSize: 2048,
-      minCharactersPerChunk: 24,
-      rules: [
-        { delimiters: ["\n\n"], includeDelim: "prev" },
-        { delimiters: ["\n"], includeDelim: "prev" },
-        { whitespace: true, includeDelim: "prev" },
-        {},
-      ],
-    }),
-  });
+const RecursiveChunkerConfigSchema = Schema.Struct({
+  chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
+  minCharactersPerChunk: Schema.Number.check(Schema.isGreaterThan(0)),
+  rules: Schema.NonEmptyArray(RecursiveRuleSchema),
+});
 
-const isValidRule = (rule: RecursiveRule): boolean => {
-  const hasDelims =
-    Array.isArray(rule.delimiters) &&
-    rule.delimiters.length > 0 &&
-    rule.delimiters.every((d) => d.length > 0);
-  const hasWhitespace = rule.whitespace === true;
-  return hasDelims || hasWhitespace || (!rule.delimiters && !rule.whitespace);
-};
-
-const isValidConfig = (config: RecursiveChunkerConfig): boolean =>
-  config.chunkSize > 0 &&
-  config.minCharactersPerChunk > 0 &&
-  config.rules.length > 0 &&
-  config.rules.every(isValidRule);
+export const RecursiveChunkerConfig = ServiceMap.Reference<
+  typeof RecursiveChunkerConfigSchema.Type
+>("RecursiveChunkerConfig", {
+  defaultValue: () => ({
+    chunkSize: 2048,
+    minCharactersPerChunk: 24,
+    rules: [
+      { delimiters: ["\n\n"], includeDelim: "prev" },
+      { delimiters: ["\n"], includeDelim: "prev" },
+      { whitespace: true, includeDelim: "prev" },
+      {},
+    ],
+  }),
+});
 
 const enforceMinCharacters = (
   parts: ReadonlyArray<string>,
@@ -69,7 +67,7 @@ const enforceMinCharacters = (
       merged.push(part);
     }
   }
-  if (merged.length > 1 && merged[0]!.length < minCharactersPerChunk) {
+  if (merged.length > 1 && (merged[0]?.length ?? 0) < minCharactersPerChunk) {
     merged[1] = `${merged[0]}${merged[1]}`;
     merged.shift();
   }
@@ -154,16 +152,9 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
   {
     make: Effect.gen(function* () {
       const tokenizer = yield* Tokenizer;
+      const config = yield* RecursiveChunkerConfig;
       const { chunkSize, minCharactersPerChunk, rules } =
-        yield* RecursiveChunkerConfig;
-
-      if (!isValidConfig({ chunkSize, minCharactersPerChunk, rules })) {
-        return yield* Effect.fail(
-          new ChunkError({
-            message: "Invalid recursive chunker config",
-          }),
-        );
-      }
+        yield* Schema.decodeEffect(RecursiveChunkerConfigSchema)(config);
 
       const tokenFallback = Effect.fn(function* (
         text: string,

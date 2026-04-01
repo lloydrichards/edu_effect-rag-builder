@@ -1,4 +1,9 @@
-export type IncludeDelim = "prev" | "next" | null;
+import { Schema } from "effect";
+
+export const IncludeDelim = Schema.NullOr(Schema.Literals(["prev", "next"]));
+export type IncludeDelim = typeof IncludeDelim.Type;
+
+
 
 export type TextSpan = {
   text: string;
