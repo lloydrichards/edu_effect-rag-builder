@@ -31,15 +31,17 @@ describe("RecursiveChunker", () => {
       ],
     }),
   )((it) => {
-    it.effect("returns empty chunks for whitespace-only input", () =>
-      Effect.gen(function* () {
-        const chunker = yield* Chunker;
-        const chunks = yield* chunker.chunk("   \n\t ");
-        expect(chunks).toEqual([]);
-      }),
+    it.effect(
+      "Given whitespace-only input, when chunking, then returns empty chunks",
+      () =>
+        Effect.gen(function* () {
+          const chunker = yield* Chunker;
+          const chunks = yield* chunker.chunk("   \n\t ");
+          expect(chunks).toEqual([]);
+        }),
     );
     it.effect(
-      "maintains contiguous offsets that reconstruct original text",
+      "Given mixed delimiters, when chunking, then offsets reconstruct original text",
       () =>
         Effect.gen(function* () {
           const chunker = yield* Chunker;
@@ -64,7 +66,7 @@ describe("RecursiveChunker", () => {
         }),
     );
     it.effect(
-      "falls back to token windows when no splitting rule applies",
+      "Given delimiter-free input, when chunking, then falls back to token windows",
       () =>
         Effect.gen(function* () {
           const chunker = yield* Chunker;
@@ -76,32 +78,110 @@ describe("RecursiveChunker", () => {
         }),
     );
   });
-  it.effect("fails on invalid config", () =>
-    Effect.gen(function* () {
-      const program = Effect.gen(function* () {
-        const chunker = yield* Chunker;
-        return yield* chunker.chunk("abc");
-      }).pipe(
-        Effect.provide(
-          makeRecursiveChunkerLive({
-            chunkSize: 0,
-            minCharactersPerChunk: 1,
-            rules: [{ delimiters: ["\n"] }],
-          }),
-        ),
-      );
-      const exit = yield* Effect.exit(program);
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) {
-        const failure = Cause.findErrorOption(exit.cause);
-        expect(Option.isSome(failure)).toBe(true);
-        if (Option.isSome(failure)) {
-          expect(failure.value).toBeInstanceOf(SchemaError);
-          expect(failure.value.message).toContain(
-            "Expected a value greater than 0, got 0",
-          );
+  it.effect(
+    "Given invalid config, when chunking, then config validation fails",
+    () =>
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const chunker = yield* Chunker;
+          return yield* chunker.chunk("abc");
+        }).pipe(
+          Effect.provide(
+            makeRecursiveChunkerLive({
+              chunkSize: 0,
+              minCharactersPerChunk: 1,
+              rules: [{ delimiters: ["\n"] }],
+            }),
+          ),
+        );
+        const exit = yield* Effect.exit(program);
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit)) {
+          const failure = Cause.findErrorOption(exit.cause);
+          expect(Option.isSome(failure)).toBe(true);
+          if (Option.isSome(failure)) {
+            expect(failure.value).toBeInstanceOf(SchemaError);
+            expect(failure.value.message).toContain(
+              "Expected a value greater than 0, got 0",
+            );
+          }
         }
-      }
-    }),
+      }),
   );
+});
+
+describe("RecursiveChunker rule metadata", () => {
+  it.layer(
+    makeRecursiveChunkerLive({
+      chunkSize: 50,
+      minCharactersPerChunk: 1,
+      rules: [{ delimiters: ["|"], includeDelim: "prev" }],
+    }),
+  )((it) => {
+    it.effect(
+      "Given delimiter rules, when chunking, then metadata annotates rule",
+      () =>
+        Effect.gen(function* () {
+          const chunker = yield* Chunker;
+          const text = "A|B|";
+          const chunks = yield* chunker.chunk(text);
+
+          expect(chunks.length).toBeGreaterThan(0);
+          for (const chunk of chunks) {
+            expect(chunk.metadata?.["recursiveRuleLevel"]).toBe(0);
+            expect(chunk.metadata?.["recursiveRuleType"]).toBe("delimiter");
+            expect(chunk.metadata?.["recursiveDelimiter"]).toBe("|");
+          }
+        }),
+    );
+  });
+
+  it.layer(
+    makeRecursiveChunkerLive({
+      chunkSize: 50,
+      minCharactersPerChunk: 1,
+      rules: [{ whitespace: true, includeDelim: "prev" }],
+    }),
+  )((it) => {
+    it.effect(
+      "Given whitespace rules, when chunking, then metadata annotates rule",
+      () =>
+        Effect.gen(function* () {
+          const chunker = yield* Chunker;
+          const text = "A B C";
+          const chunks = yield* chunker.chunk(text);
+
+          expect(chunks.length).toBeGreaterThan(0);
+          for (const chunk of chunks) {
+            expect(chunk.metadata?.["recursiveRuleLevel"]).toBe(0);
+            expect(chunk.metadata?.["recursiveRuleType"]).toBe("whitespace");
+          }
+        }),
+    );
+  });
+});
+
+describe("RecursiveChunker minimum character enforcement", () => {
+  it.layer(
+    makeRecursiveChunkerLive({
+      chunkSize: 10,
+      minCharactersPerChunk: 5,
+      rules: [{ delimiters: ["\n"], includeDelim: "prev" }],
+    }),
+  )((it) => {
+    it.effect(
+      "Given short splits, when chunking, then min length merges segments",
+      () =>
+        Effect.gen(function* () {
+          const chunker = yield* Chunker;
+          const text = "A.\nB.\nLonger.";
+          const chunks = yield* chunker.chunk(text);
+
+          expect(chunks.map((chunk) => chunk.text)).toEqual([
+            "A.\nB.\n",
+            "Longer.",
+          ]);
+        }),
+    );
+  });
 });
