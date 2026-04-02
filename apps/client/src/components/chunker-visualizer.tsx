@@ -26,12 +26,45 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Textarea } from "./ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 const DEFAULT_TEXT =
   "RAG systems rely on chunking to keep retrieval focused. When documents are too large, a query matches broad sections and the model wastes context. When chunks are too small, answers lose continuity and important details are split across boundaries. A good chunking strategy balances semantic cohesion with a predictable size so the retriever can rank content effectively.\n\n" +
   "Think about what your users search for. If they ask about product capabilities, chunk by headings and feature lists. If they ask about procedures, keep steps and prerequisites together. If they ask about troubleshooting, preserve error messages with their recommended fixes. The right delimiters and overlap help keep these relationships intact while still letting you control token budgets.\n\n" +
   "This playground lets you test different chunk sizes, overlaps, and delimiter rules. Try a smaller size with a little overlap and see how the boundaries shift. Then increase the size to keep more context together. You will notice how the chunk count changes and how much text repeats when overlap is enabled.";
+
+const INPUT_PRESETS = {
+  txt: DEFAULT_TEXT,
+  md:
+    "# Campus survey insights\n\n" +
+    "We interviewed 18 students about study habits and class tools. The notes below summarize what they use most and where friction shows up.\n\n" +
+    "| Tool | Use case | Friction |\n" +
+    "| --- | --- | --- |\n" +
+    "| Course portal | Assignments, grades | Slow navigation |\n" +
+    "| Docs | Group outlines | Version confusion |\n" +
+    "| Calendar | Deadlines | Notification overload |\n\n" +
+    "Recommendations:\n" +
+    "- Keep core resources in one place.\n" +
+    "- Offer a single weekly summary.\n" +
+    "- Make ownership clear for group work.\n",
+  html:
+    "<h1>Experiment summary</h1>\n" +
+    "<p>We tested three onboarding flows with 42 new users to compare completion rates and time to value.</p>\n" +
+    "<table>\n" +
+    "  <thead>\n" +
+    "    <tr><th>Flow</th><th>Completion</th><th>Median time</th></tr>\n" +
+    "  </thead>\n" +
+    "  <tbody>\n" +
+    "    <tr><td>A</td><td>78%</td><td>3m 12s</td></tr>\n" +
+    "    <tr><td>B</td><td>84%</td><td>2m 41s</td></tr>\n" +
+    "    <tr><td>C</td><td>69%</td><td>4m 05s</td></tr>\n" +
+    "  </tbody>\n" +
+    "</table>\n" +
+    "<p>Flow B performed best but users requested clearer next steps after the first task.</p>\n",
+} as const;
+
+type InputPreset = keyof typeof INPUT_PRESETS;
 
 const CHUNKER_LABELS: Record<ChunkerKind, string> = {
   fast: "Fast chunker",
@@ -54,6 +87,7 @@ export const clampChunkOverlap = (chunkSize: number, overlap: number) =>
 
 export function ChunkerVisualizer() {
   const [text, setText] = useState(DEFAULT_TEXT);
+  const [inputPreset, setInputPreset] = useState<InputPreset>("txt");
   const [chunker, setChunker] = useState<ChunkerKind>("sentence");
   const fastChunker = useFastChunkerConfig();
   const sentenceChunker = useSentenceChunkerConfig();
@@ -104,6 +138,11 @@ export function ChunkerVisualizer() {
     await navigator.clipboard.writeText(raw);
   };
 
+  const handlePresetChange = (preset: InputPreset) => {
+    setInputPreset(preset);
+    setText(INPUT_PRESETS[preset]);
+  };
+
   return (
     <Card className="h-full w-full col-span-2">
       <CardHeader className="border-b border-border">
@@ -124,6 +163,23 @@ export function ChunkerVisualizer() {
           <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
             <Field>
               <FieldLabel htmlFor="chunker-input-text">Input text</FieldLabel>
+              <ToggleGroup
+                id="input-text-format"
+                value={[inputPreset]}
+                className="w-full"
+              >
+                {(["txt", "md", "html"] as const).map((preset) => (
+                  <ToggleGroupItem
+                    key={preset}
+                    value={preset}
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => handlePresetChange(preset)}
+                  >
+                    {preset}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
               <Textarea
                 id="chunker-input-text"
                 value={text}

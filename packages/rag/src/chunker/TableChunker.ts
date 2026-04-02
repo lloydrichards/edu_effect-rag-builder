@@ -38,32 +38,45 @@ const splitMarkdownTable = (input: string): ParsedTable | null => {
   const lines = splitLines(input);
   if (lines.length < 3) return null;
 
-  const headerLine = lines.at(0);
-  const separatorLine = lines.at(1);
-  if (headerLine === undefined || separatorLine === undefined) return null;
-  if (!isMarkdownSeparatorRow(separatorLine.text)) return null;
-  const dataRows = lines.slice(2).filter((line) => line.text.trim().length > 0);
-  if (dataRows.length === 0) return null;
+  for (let i = 1; i < lines.length; i += 1) {
+    const headerLine = lines[i - 1];
+    const separatorLine = lines[i];
+    if (headerLine === undefined || separatorLine === undefined) continue;
+    if (!isMarkdownSeparatorRow(separatorLine.text)) continue;
 
-  const headerColumns = headerLine.text
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
+    const dataRows: Array<(typeof lines)[number]> = [];
+    let cursor = i + 1;
+    while (cursor < lines.length) {
+      const line = lines[cursor];
+      if (!line || line.text.trim().length === 0) break;
+      dataRows.push(line);
+      cursor += 1;
+    }
 
-  return {
-    header: `${headerLine.text}${separatorLine.text}`,
-    headerColumns,
-    rows: dataRows.map(({ text, startIdx, endIdx }, rowIndex) => ({
-      text,
-      startIdx,
-      endIdx,
-      rowIndex,
-    })),
-    footer: "",
-  };
+    if (dataRows.length === 0) continue;
+
+    const headerColumns = headerLine.text
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    return {
+      header: `${headerLine.text}${separatorLine.text}`,
+      headerColumns,
+      rows: dataRows.map(({ text, startIdx, endIdx }, rowIndex) => ({
+        text,
+        startIdx,
+        endIdx,
+        rowIndex,
+      })),
+      footer: "",
+    };
+  }
+
+  return null;
 };
 
 const chunkRowsBySize = (
@@ -146,16 +159,27 @@ const findHtmlRowsInRange = (
 const splitHtmlTable = (input: string): ParsedTable | null => {
   const lower = input.toLowerCase();
 
-  const tbodyOpenStart = lower.indexOf("<tbody");
-  let rowSearchStart = 0;
-  let rowSearchEnd = input.length;
+  const tableStart = lower.indexOf("<table");
+  if (tableStart === -1) return null;
+  const tableOpenEnd = lower.indexOf(">", tableStart);
+  if (tableOpenEnd === -1) return null;
+  const tableCloseStart = lower.indexOf("</table>", tableOpenEnd + 1);
+  if (tableCloseStart === -1) return null;
+  const tableEnd = tableCloseStart + "</table>".length;
 
-  if (tbodyOpenStart !== -1) {
+  const tbodyOpenStart = lower.indexOf("<tbody", tableOpenEnd + 1);
+  let rowSearchStart = tableOpenEnd + 1;
+  let rowSearchEnd = tableCloseStart;
+
+  if (tbodyOpenStart !== -1 && tbodyOpenStart < tableCloseStart) {
     const tbodyOpenEnd = lower.indexOf(">", tbodyOpenStart);
-    if (tbodyOpenEnd === -1) return null;
+    if (tbodyOpenEnd === -1 || tbodyOpenEnd > tableCloseStart) return null;
     rowSearchStart = tbodyOpenEnd + 1;
     const tbodyCloseStart = lower.indexOf("</tbody>", rowSearchStart);
-    rowSearchEnd = tbodyCloseStart === -1 ? input.length : tbodyCloseStart;
+    rowSearchEnd =
+      tbodyCloseStart === -1 || tbodyCloseStart > tableCloseStart
+        ? tableCloseStart
+        : tbodyCloseStart;
   }
 
   const rows = findHtmlRowsInRange(input, rowSearchStart, rowSearchEnd);
@@ -164,10 +188,10 @@ const splitHtmlTable = (input: string): ParsedTable | null => {
   const last = rows.at(-1);
   if (!first || !last) return null;
   return {
-    header: input.slice(0, first.startIdx),
+    header: input.slice(tableStart, first.startIdx),
     headerColumns: [],
     rows,
-    footer: input.slice(last.endIdx),
+    footer: input.slice(last.endIdx, tableEnd),
   };
 };
 const TableMode = Schema.Literals(["row", "token"]);
