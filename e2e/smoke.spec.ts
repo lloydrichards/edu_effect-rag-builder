@@ -5,11 +5,11 @@ test.describe("Smoke Tests", () => {
     await page.goto("/");
 
     // Verify the main heading renders
-    await expect(page.locator("h1")).toContainText("bEvr");
+    await expect(page.locator("h1")).toContainText("Effect RAG Builder");
 
     // Verify subheading
     await expect(page.locator("h2")).toContainText(
-      "Bun + Effect + Vite + React",
+      "Build, chunk, and query knowledge with Effect",
     );
   });
 
@@ -24,7 +24,7 @@ test.describe("Smoke Tests", () => {
     await page.goto("/");
 
     // Wait for the app to fully render
-    await expect(page.locator("h1")).toContainText("bEvr");
+    await expect(page.locator("h1")).toContainText("Effect RAG Builder");
 
     // Take full page screenshot and compare against baseline
     // Allow small pixel differences for dynamic content (timestamps, connection status)
