@@ -523,7 +523,7 @@ const RecursiveOptions = ({
         return (
           <FieldGroup
             key={ruleId}
-            className="grid grid-cols-1 gap-2 border border-border bg-muted/30 p-3 md:grid-cols-2"
+            className="grid grid-cols-1 border border-border bg-muted/30 p-3 md:grid-cols-2"
           >
             <Field>
               <FieldLabel htmlFor={`${ruleId}-mode`}>Rule mode</FieldLabel>
@@ -533,7 +533,7 @@ const RecursiveOptions = ({
                     <ToggleGroupItem
                       key={option}
                       variant="outline"
-                      className="flex-1"
+                      className="flex-1 overflow-clip"
                       value={option}
                       onClick={() =>
                         setConfig((prev) => ({
