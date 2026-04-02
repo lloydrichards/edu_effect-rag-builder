@@ -323,14 +323,15 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         );
       };
 
-      const extractText = (fileName: string, buffer: Buffer) => {
+      const extractText = (fileName: string, buffer: Uint8Array) => {
         const extension = getFileExtension(fileName);
+        const decoder = new TextDecoder("utf-8");
         switch (extension) {
           case ".txt":
           case ".md":
           case ".csv":
             return Effect.succeed({
-              text: buffer.toString("utf8"),
+              text: decoder.decode(buffer),
               pages: undefined,
             });
           case ".pdf":

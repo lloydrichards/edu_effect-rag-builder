@@ -4,8 +4,7 @@ import effect from "./assets/effect.svg";
 import react from "./assets/react.svg";
 import vite from "./assets/vite.svg";
 import { ChatBox } from "./components/chat-box";
-import { RestCard } from "./components/rest-card";
-import { RpcCard } from "./components/rpc-card";
+import { ChunkerVisualizer } from "./components/chunker-visualizer";
 import { ThemeToggle } from "./components/theme-toggle";
 import { Button } from "./components/ui/button";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -35,11 +34,10 @@ function App() {
           <p className="text-muted-foreground">A typesafe fullstack monorepo</p>
         </div>
 
-        <div className="grid w-full grid-cols-1 gap-6 auto-rows-[60rem_30rem] lg:auto-rows-[44rem_22rem] lg:grid-cols-2">
+        <div className="grid w-full grid-cols-1 gap-6 auto-rows-[60rem_30rem] lg:auto-rows-[44rem_40rem] lg:grid-cols-2">
           <ChatBox />
           <UploadCard />
-          <RestCard />
-          <RpcCard />
+          <ChunkerVisualizer />
         </div>
         <footer className="w-full flex justify-between">
           <Button
