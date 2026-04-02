@@ -1,15 +1,13 @@
 import { useAtom } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useMemo, useState } from "react";
-import {
-  type ChunkerKind,
-  type ChunkerRequest,
-  chunkerAtom,
-  type FastChunkerSettings,
-  type NonEmptyArray,
-  type SentenceChunkerSettings,
-} from "@/lib/atoms/chunker-atom";
+import { type ChunkerKind, chunkerAtom } from "@/lib/atoms/chunker-atom";
 import { cn } from "@/lib/utils";
+import { useFastChunkerConfig } from "./chunker/useFastChunkerConfig";
+import { useRecursiveChunkerConfig } from "./chunker/useRecursiveChunkerConfig";
+import { useSentenceChunkerConfig } from "./chunker/useSentenceChunkerConfig";
+import { useTableChunkerConfig } from "./chunker/useTableChunkerConfig";
+import { useTokenChunkerConfig } from "./chunker/useTokenChunkerConfig";
 import { ChunkerOptions } from "./chunker-options";
 import { Button } from "./ui/button";
 import {
@@ -38,18 +36,9 @@ const DEFAULT_TEXT =
 const CHUNKER_LABELS: Record<ChunkerKind, string> = {
   fast: "Fast chunker",
   sentence: "Sentence chunker",
-};
-
-const DEFAULT_FAST_CONFIG: FastChunkerSettings = {
-  chunkSize: 200,
-  delimiters: ["\n", ".", "?", "!"] as NonEmptyArray<string>,
-};
-
-const DEFAULT_SENTENCE_CONFIG: SentenceChunkerSettings = {
-  chunkSize: 100,
-  chunkOverlap: 0,
-  delimiters: [". ", "! ", "? ", "\n", "\n\n"] as NonEmptyArray<string>,
-  includeDelim: "prev",
+  recursive: "Recursive chunker",
+  token: "Token chunker",
+  table: "Table chunker",
 };
 
 const highlightPalette = [
@@ -60,65 +49,42 @@ const highlightPalette = [
   "bg-fuchsia-500/20 text-foreground",
 ] as const;
 
-const ensureNonEmpty = (
-  value: ReadonlyArray<string>,
-  fallback: NonEmptyArray<string>,
-): NonEmptyArray<string> =>
-  (value.length > 0 ? value : fallback) as NonEmptyArray<string>;
-
-const buildFastRequest = (
-  text: string,
-  config: FastChunkerSettings,
-): ChunkerRequest => ({ text, chunker: "fast", config });
-
-const buildSentenceRequest = (
-  text: string,
-  config: SentenceChunkerSettings,
-): ChunkerRequest => ({ text, chunker: "sentence", config });
-
-const clampChunkOverlap = (chunkSize: number, overlap: number) =>
+export const clampChunkOverlap = (chunkSize: number, overlap: number) =>
   Math.max(0, Math.min(overlap, Math.max(0, chunkSize - 1)));
-
-const normalizeFastConfig = (
-  config: FastChunkerSettings,
-): FastChunkerSettings => ({
-  ...config,
-  chunkSize: Math.max(1, Math.floor(config.chunkSize)),
-  delimiters: ensureNonEmpty(config.delimiters, DEFAULT_FAST_CONFIG.delimiters),
-});
-
-const normalizeSentenceConfig = (
-  config: SentenceChunkerSettings,
-): SentenceChunkerSettings => {
-  const chunkSize = Math.max(1, Math.floor(config.chunkSize));
-  return {
-    ...config,
-    chunkSize,
-    chunkOverlap: clampChunkOverlap(chunkSize, Math.floor(config.chunkOverlap)),
-    delimiters: ensureNonEmpty(
-      config.delimiters,
-      DEFAULT_SENTENCE_CONFIG.delimiters,
-    ),
-  };
-};
 
 export function ChunkerVisualizer() {
   const [text, setText] = useState(DEFAULT_TEXT);
   const [chunker, setChunker] = useState<ChunkerKind>("sentence");
-  const [fastConfig, setFastConfig] =
-    useState<FastChunkerSettings>(DEFAULT_FAST_CONFIG);
-  const [sentenceConfig, setSentenceConfig] = useState<SentenceChunkerSettings>(
-    DEFAULT_SENTENCE_CONFIG,
-  );
+  const fastChunker = useFastChunkerConfig();
+  const sentenceChunker = useSentenceChunkerConfig();
+  const recursiveChunker = useRecursiveChunkerConfig();
+  const tokenChunker = useTokenChunkerConfig();
+  const tableChunker = useTableChunkerConfig();
 
-  const fastConfigNormalized = normalizeFastConfig(fastConfig);
-  const sentenceConfigNormalized = normalizeSentenceConfig(sentenceConfig);
   const chunkerRequest = useMemo(() => {
-    if (chunker === "fast") {
-      return buildFastRequest(text, fastConfigNormalized);
+    switch (chunker) {
+      case "fast":
+        return fastChunker.buildRequest(text);
+      case "sentence":
+        return sentenceChunker.buildRequest(text);
+      case "recursive":
+        return recursiveChunker.buildRequest(text);
+      case "token":
+        return tokenChunker.buildRequest(text);
+      case "table":
+        return tableChunker.buildRequest(text);
+      default:
+        return tableChunker.buildRequest(text);
     }
-    return buildSentenceRequest(text, sentenceConfigNormalized);
-  }, [text, chunker, fastConfigNormalized, sentenceConfigNormalized]);
+  }, [
+    text,
+    chunker,
+    fastChunker,
+    sentenceChunker,
+    recursiveChunker,
+    tokenChunker,
+    tableChunker,
+  ]);
 
   const [result, runChunker] = useAtom(chunkerAtom);
 
@@ -167,7 +133,7 @@ export function ChunkerVisualizer() {
               />
             </Field>
 
-            <div className="space-y-2 rounded-none border border-border bg-muted/40 p-3">
+            <div className="space-y-2 rounded-none border border-border bg-muted/40 p-3 overflow-scroll">
               <Field>
                 <FieldLabel htmlFor="chunker-select">Chunker</FieldLabel>
                 <Select
@@ -189,10 +155,16 @@ export function ChunkerVisualizer() {
               </Field>
               <ChunkerOptions
                 type={chunker}
-                fastConfig={fastConfig}
-                setFastConfig={setFastConfig}
-                sentenceConfig={sentenceConfig}
-                setSentenceConfig={setSentenceConfig}
+                fastConfig={fastChunker.config}
+                setFastConfig={fastChunker.setConfig}
+                sentenceConfig={sentenceChunker.config}
+                setSentenceConfig={sentenceChunker.setConfig}
+                recursiveConfig={recursiveChunker.config}
+                setRecursiveConfig={recursiveChunker.setConfig}
+                tokenConfig={tokenChunker.config}
+                setTokenConfig={tokenChunker.setConfig}
+                tableConfig={tableChunker.config}
+                setTableConfig={tableChunker.setConfig}
               />
             </div>
           </div>
