@@ -35,9 +35,9 @@ function App() {
         </div>
 
         <div className="grid w-full grid-cols-1 gap-6 auto-rows-[60rem_30rem] lg:auto-rows-[44rem_40rem] lg:grid-cols-2">
+          <ChunkerVisualizer />
           <ChatBox />
           <UploadCard />
-          <ChunkerVisualizer />
         </div>
         <footer className="w-full flex justify-between">
           <Button

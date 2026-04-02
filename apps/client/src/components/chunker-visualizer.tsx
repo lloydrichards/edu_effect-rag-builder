@@ -119,7 +119,7 @@ export function ChunkerVisualizer() {
           </div>
         </CardAction>
       </CardHeader>
-      <CardContent className="min-h-0 overflow-hidden">
+      <CardContent className="min-h-0 h-full overflow-hidden">
         <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
             <Field>
@@ -169,12 +169,12 @@ export function ChunkerVisualizer() {
             </div>
           </div>
 
-          <div className="flex h-full flex-col gap-3">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-[0.28em] text-muted-foreground">
               <span>Chunked output</span>
               <span>{output.length} chunks</span>
             </div>
-            <div className="min-h-64 flex-1 overflow-y-auto rounded-none border border-border bg-muted/20 p-3 text-xs leading-relaxed">
+            <div className="flex-1 h-full overflow-y-auto rounded-none border border-border bg-muted/20 p-3 text-xs leading-relaxed">
               {output.length === 0 ? (
                 <div className="text-muted-foreground">
                   Run the chunker to see highlighted output.
