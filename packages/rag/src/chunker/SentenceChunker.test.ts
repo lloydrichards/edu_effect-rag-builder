@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ChunkError, Chunker } from "@repo/domain/Chunk";
+import { Chunker } from "@repo/domain/Chunk";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { SchemaError } from "effect/Schema";
 import {
   CharacterTokenizerLive,
   WordTokenizerLive,
@@ -11,7 +12,7 @@ const makeSentenceChunkerLive = (
   config: {
     chunkSize: number;
     chunkOverlap: number;
-    delimiters: string[];
+    delimiters: readonly [string, ...string[]];
     includeDelim: "prev" | "next" | null;
   },
   tokenizerLive = WordTokenizerLive,
@@ -99,9 +100,9 @@ describe("SentenceChunker", () => {
         const failure = Cause.findErrorOption(exit.cause);
         expect(Option.isSome(failure)).toBe(true);
         if (Option.isSome(failure)) {
-          expect(failure.value).toBeInstanceOf(ChunkError);
+          expect(failure.value).toBeInstanceOf(SchemaError);
           expect(failure.value.message).toContain(
-            "Invalid sentence chunker config",
+            "chunkOverlap must be less than chunkSize",
           );
         }
       }

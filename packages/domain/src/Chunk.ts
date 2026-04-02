@@ -36,6 +36,6 @@ export class Chunker extends ServiceMap.Service<
     readonly name: string;
     chunk: (
       text: string,
-    ) => Effect.Effect<Array<Chunk>, ChunkError | TokenizerError>;
+    ) => Effect.Effect<Array<Chunk>, Schema.SchemaError | TokenizerError>;
   }
 >()("Chunker") {}

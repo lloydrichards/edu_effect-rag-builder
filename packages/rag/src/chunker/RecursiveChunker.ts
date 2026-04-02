@@ -1,6 +1,5 @@
 import {
   type Chunk,
-  type ChunkError,
   Chunker,
   Tokenizer,
   type TokenizerError,
@@ -182,7 +181,7 @@ export class RecursiveChunker extends ServiceMap.Service<Chunker>()(
         text: string,
         level: number,
         startOffset: number,
-      ) => Effect.Effect<Array<Chunk>, ChunkError | TokenizerError> = (
+      ) => Effect.Effect<Array<Chunk>, Schema.SchemaError | TokenizerError> = (
         text,
         level,
         startOffset,

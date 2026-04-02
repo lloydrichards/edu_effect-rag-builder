@@ -1,4 +1,4 @@
-import type { Chunk, ChunkError, TokenizerError } from "@repo/domain/Chunk";
+import type { Chunk, TokenizerError } from "@repo/domain/Chunk";
 import {
   Array,
   Effect,
@@ -6,6 +6,7 @@ import {
   Option,
   pipe,
   Record,
+  type Schema,
   ServiceMap,
   String,
 } from "effect";
@@ -81,7 +82,7 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
       const chunkWithStrategy = (
         strategy: ChunkStrategy,
         text: string,
-      ): Effect.Effect<Array<Chunk>, ChunkError | TokenizerError> => {
+      ): Effect.Effect<Array<Chunk>, Schema.SchemaError | TokenizerError> => {
         switch (strategy) {
           case "fast":
             return fastChunker.chunk(text);
@@ -181,7 +182,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
 
       const chunkMarkdownText = (
         normalizedText: string,
-      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> =>
+      ): Effect.Effect<
+        Array<ChunkEntry>,
+        Schema.SchemaError | TokenizerError
+      > =>
         Effect.gen(function* () {
           const segments = splitMarkdownSegments(normalizedText);
           const allEntries = yield* Effect.forEach(segments, (segment) =>
@@ -204,7 +208,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
       const chunkNormalizedText = (
         extension: string,
         normalizedText: string,
-      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> =>
+      ): Effect.Effect<
+        Array<ChunkEntry>,
+        Schema.SchemaError | TokenizerError
+      > =>
         pipe(
           selectStrategy(extension, normalizedText),
           Option.match({
@@ -223,7 +230,10 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
       const chunkPdfPages = (
         pages: Array<string>,
         fallbackText: string,
-      ): Effect.Effect<Array<ChunkEntry>, ChunkError | TokenizerError> => {
+      ): Effect.Effect<
+        Array<ChunkEntry>,
+        Schema.SchemaError | TokenizerError
+      > => {
         if (pages.length === 0) {
           return chunkNormalizedText(".pdf", normalizeWhitespace(fallbackText));
         }
@@ -247,43 +257,41 @@ export class ChunkService extends ServiceMap.Service<ChunkService>()(
         text: string,
         pages?: Array<string>,
       ) {
-        return yield* Effect.gen(function* () {
-          const extension = getFileExtension(fileName);
+        const extension = getFileExtension(fileName);
+        const baseChunks: Array<ChunkEntry> = yield* ((): Effect.Effect<
+          Array<ChunkEntry>,
+          Schema.SchemaError | TokenizerError
+        > => {
           switch (extension) {
             case ".pdf":
-              return yield* chunkPdfPages(pages ?? [], text);
+              return chunkPdfPages(pages ?? [], text);
             case ".csv":
             case ".txt":
-              return yield* chunkNormalizedText(
-                extension,
-                normalizeWhitespace(text),
-              );
+              return chunkNormalizedText(extension, normalizeWhitespace(text));
             case ".md":
-              return yield* chunkMarkdownText(normalizeWhitespace(text));
+              return chunkMarkdownText(normalizeWhitespace(text));
             default:
-              return yield* Effect.succeed([] as Array<ChunkEntry>);
+              return Effect.succeed([] as Array<ChunkEntry>);
           }
-        }).pipe(
-          Effect.map((rawChunks) =>
-            rawChunks.map((chunk, index) => ({
-              ...chunk,
-              metadata: {
-                sourceFile: fileName,
-                fileExt: getFileExtension(fileName),
-                mimeType: resolveMimeTypeForFile(fileName),
-                chunkIndex: index,
-                chunkCount: rawChunks.length,
-                ...(chunk.metadata ?? {}),
-                ...(chunk.pageNumber !== undefined
-                  ? { pageNumber: chunk.pageNumber }
-                  : {}),
-                ...(chunk.pageCount !== undefined
-                  ? { pageCount: chunk.pageCount }
-                  : {}),
-              },
-            })),
-          ),
-        );
+        })();
+
+        return baseChunks.map((chunk, index) => ({
+          ...chunk,
+          metadata: {
+            sourceFile: fileName,
+            fileExt: getFileExtension(fileName),
+            mimeType: resolveMimeTypeForFile(fileName),
+            chunkIndex: index,
+            chunkCount: baseChunks.length,
+            ...(chunk.metadata ?? {}),
+            ...(chunk.pageNumber !== undefined
+              ? { pageNumber: chunk.pageNumber }
+              : {}),
+            ...(chunk.pageCount !== undefined
+              ? { pageCount: chunk.pageCount }
+              : {}),
+          },
+        }));
       });
 
       const getFileExtension = (fileName: string) =>

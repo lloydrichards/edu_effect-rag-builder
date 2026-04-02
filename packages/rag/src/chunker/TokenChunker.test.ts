@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ChunkError, Chunker } from "@repo/domain/Chunk";
+import { Chunker } from "@repo/domain/Chunk";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { SchemaError } from "effect/Schema";
 import {
   CharacterTokenizerLive,
   WordTokenizerLive,
@@ -90,9 +91,9 @@ describe("TokenChunker", () => {
         const failure = Cause.findErrorOption(exit.cause);
         expect(Option.isSome(failure)).toBe(true);
         if (Option.isSome(failure)) {
-          expect(failure.value).toBeInstanceOf(ChunkError);
+          expect(failure.value).toBeInstanceOf(SchemaError);
           expect(failure.value.message).toContain(
-            "Invalid token chunker config",
+            "chunkOverlap must be less than chunkSize",
           );
         }
       }
@@ -120,9 +121,9 @@ describe("TokenChunker", () => {
         const failure = Cause.findErrorOption(exit.cause);
         expect(Option.isSome(failure)).toBe(true);
         if (Option.isSome(failure)) {
-          expect(failure.value).toBeInstanceOf(ChunkError);
+          expect(failure.value).toBeInstanceOf(SchemaError);
           expect(failure.value.message).toContain(
-            "Invalid token chunker config",
+            "Expected a value greater than 0, got 0",
           );
         }
       }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ChunkError, Chunker } from "@repo/domain/Chunk";
+import { Chunker } from "@repo/domain/Chunk";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { SchemaError } from "effect/Schema";
 import { CharacterTokenizerLive } from "../tokenizer/DelimTokenizer";
 import {
   RecursiveChunker,
@@ -11,7 +12,7 @@ import {
 const makeRecursiveChunkerLive = (config: {
   chunkSize: number;
   minCharactersPerChunk: number;
-  rules: ReadonlyArray<RecursiveRule>;
+  rules: readonly [RecursiveRule, ...RecursiveRule[]];
 }) =>
   Layer.effect(Chunker)(RecursiveChunker.make).pipe(
     Layer.provide(CharacterTokenizerLive),
@@ -95,9 +96,9 @@ describe("RecursiveChunker", () => {
         const failure = Cause.findErrorOption(exit.cause);
         expect(Option.isSome(failure)).toBe(true);
         if (Option.isSome(failure)) {
-          expect(failure.value).toBeInstanceOf(ChunkError);
+          expect(failure.value).toBeInstanceOf(SchemaError);
           expect(failure.value.message).toContain(
-            "Invalid recursive chunker config",
+            "Expected a value greater than 0, got 0",
           );
         }
       }

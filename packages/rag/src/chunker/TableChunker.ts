@@ -267,16 +267,16 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
           return chunks;
         });
 
-      const chunk = Effect.fn(function* (input: string) {
+      const chunk = Effect.fn("TableChunker.chunk")(function* (input: string) {
         if (isBlank(input)) return [];
         const narrowFormat = detectFormat(input, format);
         const parsed =
           narrowFormat === "markdown"
             ? splitMarkdownTable(input)
             : splitHtmlTable(input);
+        if (!parsed) return [];
         switch (narrowFormat) {
           case "html": {
-            if (!parsed) return [];
             switch (mode) {
               case "row": {
                 const rowGroups = chunkRowsBySize(parsed.rows, chunkSize);
@@ -301,20 +301,20 @@ export class TableChunker extends ServiceMap.Service<Chunker>()(
                   narrowFormat,
                 );
               }
+              default:
+                return [];
             }
-            break;
           }
           case "markdown": {
-            if (!parsed) return [];
             switch (mode) {
               case "row": {
                 const rowGroups = chunkRowsBySize(parsed.rows, chunkSize);
-                return rowGroups.flatMap((r) => {
+                return rowGroups.flatMap((rows) => {
                   const build = toRowModeChunk(
                     {
                       header: parsed.header,
                       headerColumns: parsed.headerColumns,
-                      rows: r,
+                      rows,
                       footer: parsed.footer,
                     },
                     narrowFormat,
