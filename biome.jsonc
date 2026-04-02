@@ -18,9 +18,14 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "a11y": {
+        "noLabelWithoutControl": "off",
+        "useSemanticElements": "info"
+      },
       "suspicious": {
         "noShadowRestrictedNames": "off",
-        "noUnknownAtRules": "off"
+        "noUnknownAtRules": "off",
+        "noArrayIndexKey": "warn"
       }
     }
   },
