@@ -1,0 +1,250 @@
+import { useAtom } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { useMemo, useState } from "react";
+import {
+  type ChunkerKind,
+  type ChunkerRequest,
+  chunkerAtom,
+  type FastChunkerSettings,
+  type NonEmptyArray,
+  type SentenceChunkerSettings,
+} from "@/lib/atoms/chunker-atom";
+import { cn } from "@/lib/utils";
+import { ChunkerOptions } from "./chunker-options";
+import { Button } from "./ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Field, FieldLabel } from "./ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Textarea } from "./ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+
+const DEFAULT_TEXT =
+  "RAG systems rely on chunking to keep retrieval focused. When documents are too large, a query matches broad sections and the model wastes context. When chunks are too small, answers lose continuity and important details are split across boundaries. A good chunking strategy balances semantic cohesion with a predictable size so the retriever can rank content effectively.\n\n" +
+  "Think about what your users search for. If they ask about product capabilities, chunk by headings and feature lists. If they ask about procedures, keep steps and prerequisites together. If they ask about troubleshooting, preserve error messages with their recommended fixes. The right delimiters and overlap help keep these relationships intact while still letting you control token budgets.\n\n" +
+  "This playground lets you test different chunk sizes, overlaps, and delimiter rules. Try a smaller size with a little overlap and see how the boundaries shift. Then increase the size to keep more context together. You will notice how the chunk count changes and how much text repeats when overlap is enabled.";
+
+const CHUNKER_LABELS: Record<ChunkerKind, string> = {
+  fast: "Fast chunker",
+  sentence: "Sentence chunker",
+};
+
+const DEFAULT_FAST_CONFIG: FastChunkerSettings = {
+  chunkSize: 200,
+  delimiters: ["\n", ".", "?", "!"] as NonEmptyArray<string>,
+};
+
+const DEFAULT_SENTENCE_CONFIG: SentenceChunkerSettings = {
+  chunkSize: 100,
+  chunkOverlap: 0,
+  delimiters: [". ", "! ", "? ", "\n", "\n\n"] as NonEmptyArray<string>,
+  includeDelim: "prev",
+};
+
+const highlightPalette = [
+  "bg-emerald-500/20 text-foreground",
+  "bg-amber-400/25 text-foreground",
+  "bg-sky-500/20 text-foreground",
+  "bg-lime-500/20 text-foreground",
+  "bg-fuchsia-500/20 text-foreground",
+] as const;
+
+const ensureNonEmpty = (
+  value: ReadonlyArray<string>,
+  fallback: NonEmptyArray<string>,
+): NonEmptyArray<string> =>
+  (value.length > 0 ? value : fallback) as NonEmptyArray<string>;
+
+const buildFastRequest = (
+  text: string,
+  config: FastChunkerSettings,
+): ChunkerRequest => ({ text, chunker: "fast", config });
+
+const buildSentenceRequest = (
+  text: string,
+  config: SentenceChunkerSettings,
+): ChunkerRequest => ({ text, chunker: "sentence", config });
+
+const clampChunkOverlap = (chunkSize: number, overlap: number) =>
+  Math.max(0, Math.min(overlap, Math.max(0, chunkSize - 1)));
+
+const normalizeFastConfig = (
+  config: FastChunkerSettings,
+): FastChunkerSettings => ({
+  ...config,
+  chunkSize: Math.max(1, Math.floor(config.chunkSize)),
+  delimiters: ensureNonEmpty(config.delimiters, DEFAULT_FAST_CONFIG.delimiters),
+});
+
+const normalizeSentenceConfig = (
+  config: SentenceChunkerSettings,
+): SentenceChunkerSettings => {
+  const chunkSize = Math.max(1, Math.floor(config.chunkSize));
+  return {
+    ...config,
+    chunkSize,
+    chunkOverlap: clampChunkOverlap(chunkSize, Math.floor(config.chunkOverlap)),
+    delimiters: ensureNonEmpty(
+      config.delimiters,
+      DEFAULT_SENTENCE_CONFIG.delimiters,
+    ),
+  };
+};
+
+export function ChunkerVisualizer() {
+  const [text, setText] = useState(DEFAULT_TEXT);
+  const [chunker, setChunker] = useState<ChunkerKind>("sentence");
+  const [fastConfig, setFastConfig] =
+    useState<FastChunkerSettings>(DEFAULT_FAST_CONFIG);
+  const [sentenceConfig, setSentenceConfig] = useState<SentenceChunkerSettings>(
+    DEFAULT_SENTENCE_CONFIG,
+  );
+
+  const fastConfigNormalized = normalizeFastConfig(fastConfig);
+  const sentenceConfigNormalized = normalizeSentenceConfig(sentenceConfig);
+  const chunkerRequest = useMemo(() => {
+    if (chunker === "fast") {
+      return buildFastRequest(text, fastConfigNormalized);
+    }
+    return buildSentenceRequest(text, sentenceConfigNormalized);
+  }, [text, chunker, fastConfigNormalized, sentenceConfigNormalized]);
+
+  const [result, runChunker] = useAtom(chunkerAtom);
+
+  const output = AsyncResult.getOrElse(result, () => []);
+
+  const handleRun = () => {
+    runChunker(chunkerRequest);
+  };
+
+  const handleCopy = async () => {
+    if (output.length === 0) return;
+    const raw = output
+      .map(
+        (chunk, index) => `Chunk ${index + 1}\n${"-".repeat(8)}\n${chunk.text}`,
+      )
+      .join("\n\n");
+    await navigator.clipboard.writeText(raw);
+  };
+
+  return (
+    <Card className="h-full w-full col-span-2">
+      <CardHeader className="border-b border-border">
+        <CardTitle>Chunker Playground</CardTitle>
+        <CardAction>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleCopy}>
+              Copy chunks
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleRun}>
+              Chunk text
+            </Button>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="min-h-0 overflow-hidden">
+        <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+            <Field>
+              <FieldLabel htmlFor="chunker-input-text">Input text</FieldLabel>
+              <Textarea
+                id="chunker-input-text"
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                rows={12}
+                className="min-h-16"
+              />
+            </Field>
+
+            <div className="space-y-2 rounded-none border border-border bg-muted/40 p-3">
+              <Field>
+                <FieldLabel htmlFor="chunker-select">Chunker</FieldLabel>
+                <Select
+                  id="chunker-select"
+                  value={chunker}
+                  onValueChange={(value) => setChunker(value as ChunkerKind)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Chunker" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(CHUNKER_LABELS).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <ChunkerOptions
+                type={chunker}
+                fastConfig={fastConfig}
+                setFastConfig={setFastConfig}
+                sentenceConfig={sentenceConfig}
+                setSentenceConfig={setSentenceConfig}
+              />
+            </div>
+          </div>
+
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-[0.28em] text-muted-foreground">
+              <span>Chunked output</span>
+              <span>{output.length} chunks</span>
+            </div>
+            <div className="min-h-64 flex-1 overflow-y-auto rounded-none border border-border bg-muted/20 p-3 text-xs leading-relaxed">
+              {output.length === 0 ? (
+                <div className="text-muted-foreground">
+                  Run the chunker to see highlighted output.
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap">
+                  {output.map((chunk, index) => (
+                    <Tooltip key={chunk.startIdx}>
+                      <TooltipTrigger
+                        render={(props) => (
+                          <span
+                            className={cn(
+                              "rounded-sm px-0.5",
+                              highlightPalette[
+                                chunk.startIdx % highlightPalette.length
+                              ],
+                            )}
+                            {...props}
+                          >
+                            {chunk.text}
+                          </span>
+                        )}
+                      />
+                      <TooltipContent side="left">
+                        <div className="flex flex-col gap-1">
+                          <div>
+                            <strong>Chunk {index + 1}</strong>
+                          </div>
+                          <div>
+                            Tokens: {chunk.tokenCount} | Characters:{" "}
+                            {chunk.text.length}
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
