@@ -6,7 +6,7 @@ import {
 } from "@repo/domain/Chunk";
 import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
-import { isBlank } from "./util";
+import { isBlank, splitLines } from "./utils";
 
 type RowSlice = {
   text: string;
@@ -22,12 +22,6 @@ type ParsedTable = {
   footer: string;
 };
 
-type LineSlice = {
-  text: string;
-  startIdx: number;
-  endIdx: number;
-};
-
 const detectFormat = (
   input: string,
   format: typeof TableFormat.Type,
@@ -36,30 +30,12 @@ const detectFormat = (
   return input.toLowerCase().includes("<table") ? "html" : "markdown";
 };
 
-const splitLinesWithOffsets = (input: string): LineSlice[] => {
-  const lines: LineSlice[] = [];
-  let cursor = 0;
-
-  while (cursor < input.length) {
-    const newlineIdx = input.indexOf("\n", cursor);
-    const endIdx = newlineIdx === -1 ? input.length : newlineIdx + 1;
-    lines.push({
-      text: input.slice(cursor, endIdx),
-      startIdx: cursor,
-      endIdx,
-    });
-    cursor = endIdx;
-  }
-
-  return lines;
-};
-
 /* Accepts forms like: | --- | :---: | ---: |*/
 const isMarkdownSeparatorRow = (line: string): boolean =>
   /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line.trim());
 
 const splitMarkdownTable = (input: string): ParsedTable | null => {
-  const lines = splitLinesWithOffsets(input);
+  const lines = splitLines(input);
   if (lines.length < 3) return null;
 
   const headerLine = lines.at(0);
@@ -104,7 +80,7 @@ const chunkRowsBySize = (
 const toRowModeChunk = (
   table: ParsedTable,
   format: Exclude<typeof TableFormat.Type, "auto">,
-  mode: typeof TableChunkerMode.Type,
+  mode: typeof TableMode.Type,
 ): Chunk | null => {
   const first = table.rows.at(0);
   const last = table.rows.at(-1);
@@ -194,12 +170,12 @@ const splitHtmlTable = (input: string): ParsedTable | null => {
     footer: input.slice(last.endIdx),
   };
 };
-const TableChunkerMode = Schema.Literals(["row", "token"]);
+const TableMode = Schema.Literals(["row", "token"]);
 const TableFormat = Schema.Literals(["markdown", "html", "auto"]);
 
 const TableChunkerConfigSchema = Schema.Struct({
   chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
-  mode: TableChunkerMode,
+  mode: TableMode,
   format: TableFormat,
 });
 

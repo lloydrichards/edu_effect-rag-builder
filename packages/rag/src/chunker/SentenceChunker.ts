@@ -8,7 +8,7 @@ import {
   isBlank,
   splitTextByMatches,
   type TextSpan,
-} from "./util";
+} from "./utils";
 
 const SentenceChunkerConfigSchema = Schema.Struct({
   chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
@@ -39,7 +39,7 @@ const splitSentences = (
   text: string,
   delimiters: ReadonlyArray<string>,
   includeDelim: IncludeDelim,
-): Array<TextSpan> => {
+): Array<typeof TextSpan.Type> => {
   if (delimiters.length === 0) {
     return text.length === 0
       ? []

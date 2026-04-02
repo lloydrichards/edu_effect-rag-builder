@@ -3,13 +3,11 @@ import { Schema } from "effect";
 export const IncludeDelim = Schema.NullOr(Schema.Literals(["prev", "next"]));
 export type IncludeDelim = typeof IncludeDelim.Type;
 
-
-
-export type TextSpan = {
-  text: string;
-  startIdx: number;
-  endIdx: number;
-};
+export const TextSpan = Schema.Struct({
+  text: Schema.String,
+  startIdx: Schema.Number,
+  endIdx: Schema.Number,
+});
 
 export const isBlank = (text: string): boolean => text.trim().length === 0;
 
@@ -28,7 +26,7 @@ export const buildDelimiterPattern = (
 export const findDelimiterSpans = (
   text: string,
   pattern: RegExp,
-): Array<TextSpan> =>
+): Array<typeof TextSpan.Type> =>
   Array.from(text.matchAll(pattern)).flatMap((match) => {
     const raw = match[0];
     const startIdx = match.index;
@@ -38,16 +36,16 @@ export const findDelimiterSpans = (
 
 export const splitTextByMatches = (
   text: string,
-  matches: ReadonlyArray<TextSpan>,
+  matches: ReadonlyArray<typeof TextSpan.Type>,
   includeDelim: IncludeDelim,
-): Array<TextSpan> => {
+): Array<typeof TextSpan.Type> => {
   if (matches.length === 0) {
     return text.length === 0
       ? []
       : [{ text, startIdx: 0, endIdx: text.length }];
   }
 
-  const parts: Array<TextSpan> = [];
+  const parts: Array<typeof TextSpan.Type> = [];
 
   switch (includeDelim) {
     case "prev": {
@@ -112,4 +110,22 @@ export const splitTextByMatches = (
   }
 
   return parts.filter((part) => part.text.length > 0);
+};
+
+export const splitLines = (input: string): Array<typeof TextSpan.Type> => {
+  const lines: Array<typeof TextSpan.Type> = [];
+  let cursor = 0;
+
+  while (cursor < input.length) {
+    const newlineIdx = input.indexOf("\n", cursor);
+    const endIdx = newlineIdx === -1 ? input.length : newlineIdx + 1;
+    lines.push({
+      text: input.slice(cursor, endIdx),
+      startIdx: cursor,
+      endIdx,
+    });
+    cursor = endIdx;
+  }
+
+  return lines;
 };
