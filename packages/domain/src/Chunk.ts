@@ -19,16 +19,6 @@ export const Chunk = Schema.Struct({
 
 export type Chunk = typeof Chunk.Type;
 
-export const VocabRef = ServiceMap.Reference("VocabRef", {
-  defaultValue: () => new Map<string, number>(),
-});
-export const ReverseRef = ServiceMap.Reference("ReverseRef", {
-  defaultValue: () => new Map<number, string>(),
-});
-export const NextIdRef = ServiceMap.Reference("NextIdRef", {
-  defaultValue: () => 0,
-});
-
 export class Tokenizer extends ServiceMap.Service<
   Tokenizer,
   {

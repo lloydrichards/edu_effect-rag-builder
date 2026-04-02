@@ -1,6 +1,6 @@
 import { type Chunk, Chunker } from "@repo/domain/Chunk";
 import { Effect, Layer, Schema, ServiceMap } from "effect";
-import { isBlank } from "./util";
+import { isBlank } from "./utils";
 
 const FastChunkerConfigSchema = Schema.Struct({
   chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),

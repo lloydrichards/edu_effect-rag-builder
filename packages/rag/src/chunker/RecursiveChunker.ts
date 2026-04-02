@@ -13,7 +13,7 @@ import {
   IncludeDelim,
   isBlank,
   splitTextByMatches,
-} from "./util";
+} from "./utils";
 
 const RecursiveRuleSchema = Schema.Struct({
   delimiters: Schema.optional(Schema.NonEmptyArray(Schema.String)),

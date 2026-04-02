@@ -1,7 +1,7 @@
 import { type Chunk, Chunker, Tokenizer } from "@repo/domain/Chunk";
 import { Effect, Layer, Schema, ServiceMap } from "effect";
 import { WordTokenizerLive } from "../tokenizer/DelimTokenizer";
-import { isBlank } from "./util";
+import { isBlank } from "./utils";
 
 const TokenChunkerConfigSchema = Schema.Struct({
   chunkSize: Schema.Number.check(Schema.isGreaterThan(0)),
