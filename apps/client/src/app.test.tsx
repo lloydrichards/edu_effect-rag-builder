@@ -28,65 +28,77 @@ vi.mock("effect/unstable/reactivity", () => ({
   },
 }));
 
-vi.mock("./lib/atom", () => ({
-  runtime: { fn: vi.fn(() => vi.fn()) },
-  helloAtom: vi.fn(),
-  tickAtom: vi.fn(),
+vi.mock("@/lib/atoms/chat-atom", () => ({
   chatAtom: vi.fn(),
 }));
 
-vi.mock("./lib/web-socket-client", () => ({
-  WebSocketClient: {
-    mutation: vi.fn(() => vi.fn()),
-  },
-  presenceSubscriptionAtom: vi.fn(),
+vi.mock("@/lib/atoms/chunker-atom", () => ({
+  chunkerAtom: vi.fn(),
+}));
+
+vi.mock("@/lib/atoms/upload-atom", () => ({
+  uploadAtom: vi.fn(),
+  validateFiles: vi.fn(() => ({ valid: [], rejected: [] })),
 }));
 
 describe("App", () => {
   test("renders without crashing", async () => {
     const screen = await render(<App />);
-    await expect.element(screen.getByText("bEvr")).toBeVisible();
+    await expect.element(screen.getByText("Effect RAG Builder")).toBeVisible();
   });
 
   test("displays the subtitle", async () => {
     const screen = await render(<App />);
     await expect
-      .element(screen.getByText("Bun + Effect + Vite + React"))
+      .element(
+        screen.getByText("Build, chunk, and query knowledge with Effect"),
+      )
       .toBeVisible();
   });
 
   test("displays the description", async () => {
     const screen = await render(<App />);
     await expect
-      .element(screen.getByText("A typesafe fullstack monorepo"))
+      .element(
+        screen.getByText(
+          "An educational workspace for RAG workflows and monorepo patterns",
+        ),
+      )
       .toBeVisible();
   });
 
-  test("renders REST API section", async () => {
+  test("renders chunker playground", async () => {
     const screen = await render(<App />);
-    const restHeading = screen.getByText(/^REST API$/);
-    restHeading.element().scrollIntoView({ block: "center" });
-    await expect.element(restHeading).toBeVisible();
+    const chunkerHeading = screen.getByText("Chunker Playground");
+    chunkerHeading.element().scrollIntoView({ block: "center" });
+    await expect.element(chunkerHeading).toBeVisible();
     await expect
-      .element(screen.getByRole("button", { name: "Call REST API" }))
+      .element(screen.getByRole("button", { name: "Chunk text" }))
       .toBeVisible();
   });
 
-  test("renders RPC API section", async () => {
+  test("renders chat section", async () => {
     const screen = await render(<App />);
-    const rpcHeading = screen.getByText(/^RPC API$/);
-    rpcHeading.element().scrollIntoView({ block: "center" });
-    await expect.element(rpcHeading).toBeVisible();
+    const chatHeading = screen.getByText("Chat (RPC)");
+    chatHeading.element().scrollIntoView({ block: "center" });
+    await expect.element(chatHeading).toBeVisible();
     await expect
-      .element(screen.getByRole("button", { name: "Call RPC API" }))
+      .element(screen.getByPlaceholder("Send a message"))
       .toBeVisible();
   });
 
-  test("renders all technology logos", async () => {
+  test("renders upload section", async () => {
     const screen = await render(<App />);
-    await expect.element(screen.getByAltText("Bun logo")).toBeVisible();
+    const uploadHeading = screen.getByText("Document Upload");
+    uploadHeading.element().scrollIntoView({ block: "center" });
+    await expect.element(uploadHeading).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "Add files" }))
+      .toBeVisible();
+  });
+
+  test("renders brand logo", async () => {
+    const screen = await render(<App />);
     await expect.element(screen.getByAltText("Effect logo")).toBeVisible();
-    await expect.element(screen.getByAltText("Vite logo")).toBeVisible();
-    await expect.element(screen.getByAltText("React logo")).toBeVisible();
   });
 });

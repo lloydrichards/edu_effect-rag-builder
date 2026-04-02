@@ -152,7 +152,7 @@ export function ChunkerVisualizer() {
             <Button size="sm" variant="outline" onClick={handleCopy}>
               Copy chunks
             </Button>
-            <Button size="sm" variant="outline" onClick={handleRun}>
+            <Button size="sm" onClick={handleRun}>
               Chunk text
             </Button>
           </div>
